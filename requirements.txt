@@ -1,0 +1,8 @@
+openai>=1.0.0
+langgraph
+python-dotenv
+fastapi
+uvicorn
+python-multipart
+openai-whisper
+pypdf

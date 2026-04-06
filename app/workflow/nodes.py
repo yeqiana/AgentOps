@@ -1,0 +1,362 @@
+"""
+Workflow nodes.
+
+What this is:
+- The LangGraph node implementation layer.
+
+What it does:
+- Runs tool selection/execution, planning, and final answering.
+- Reads state, invokes tools or model calls, and writes results back into state.
+
+Why this is done this way:
+- Nodes should stay thin and orchestration-oriented.
+- Asset parsing, storage, and prompt construction should stay in their own
+  layers so the workflow can evolve without duplicating logic.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from app.application.image_service import create_image_asset_from_reference
+from app.application.prompt_builder import build_answer_prompt, build_plan_prompt
+from app.config import ensure_upload_download_dir
+from app.domain.errors import ToolError
+from app.domain.models import AgentState, InputAsset, Message, ToolExecutionResult
+from app.infrastructure.llm.client import call_llm, sanitize_text
+from app.infrastructure.logger import get_logger
+from app.infrastructure.tools.registry import build_default_tool_registry
+
+
+logger = get_logger("workflow.nodes")
+
+
+def append_assistant_message(messages: list[Message], answer: str) -> list[Message]:
+    """
+    What this is:
+    - A workflow helper for assistant-message persistence.
+
+    What it does:
+    - Appends the latest assistant reply into conversation history.
+
+    Why this is done this way:
+    - Multi-turn conversation depends on a complete message history, including
+      model replies.
+    """
+
+    return [*messages, {"role": "assistant", "content": sanitize_text(answer)}]
+
+
+def _resolve_local_asset_path(asset: InputAsset) -> str | None:
+    """
+    What this is:
+    - A local file locator helper for tool routing.
+
+    What it does:
+    - Returns a resolved local file path only when the asset really points to an
+      existing local file.
+
+    Why this is done this way:
+    - OCR, ASR, and video CLI tools currently work on local paths, so URL and
+      object-storage assets must not accidentally be routed into them.
+    """
+
+    local_path = sanitize_text(asset.get("local_path", ""))
+    locator = sanitize_text(asset.get("locator", ""))
+    candidate = local_path or locator
+    if not candidate:
+        return None
+
+    path = Path(candidate)
+    if not path.exists() or not path.is_file():
+        return None
+    return str(path.resolve())
+
+
+def _build_primary_tool_parameters(asset: InputAsset, local_path: str) -> tuple[str, dict[str, str]] | None:
+    """
+    What this is:
+    - The first-pass asset-to-tool routing helper.
+
+    What it does:
+    - Maps image/audio/video assets to their primary local tools.
+
+    Why this is done this way:
+    - The workflow should decide routing from normalized asset kind instead of
+      hard-coding command decisions throughout the node body.
+    """
+
+    if asset["kind"] == "image":
+        return "ocr_tesseract", {"image_path": local_path}
+    if asset["kind"] == "audio":
+        return "asr_whisper", {"audio_path": local_path, "model": "tiny"}
+    if asset["kind"] == "video":
+        return "video_ffprobe", {"video_path": local_path}
+    return None
+
+
+def _build_video_frame_output_path(trace_id: str, video_path: str) -> str:
+    """
+    What this is:
+    - A deterministic frame-output helper for video post-processing.
+
+    What it does:
+    - Creates a stable output path for ffmpeg frame extraction inside the
+      configured local upload/download root.
+
+    Why this is done this way:
+    - Video post-processing must reuse the same configurable local storage
+      policy as uploads and OCR-style local tooling.
+    """
+
+    frame_dir = ensure_upload_download_dir() / "video_frames"
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    stem = Path(video_path).stem or "video"
+    return str((frame_dir / f"{stem}_{trace_id}_frame.jpg").resolve())
+
+
+def _build_video_audio_output_path(trace_id: str, video_path: str) -> str:
+    """
+    What this is:
+    - A deterministic audio-output helper for video post-processing.
+
+    What it does:
+    - Creates a stable WAV output path for extracted audio inside the configured
+      upload/download root.
+
+    Why this is done this way:
+    - Video-derived audio should follow the same local storage policy as uploads
+      and generated frames so downstream tools can always find it.
+    """
+
+    audio_dir = ensure_upload_download_dir() / "video_audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    stem = Path(video_path).stem or "video"
+    return str((audio_dir / f"{stem}_{trace_id}_audio.wav").resolve())
+
+
+def _summarize_tool_results(tool_results: list[ToolExecutionResult]) -> str:
+    """
+    What this is:
+    - A task-state summarizer for tool execution.
+
+    What it does:
+    - Compresses structured tool results into a short, readable status summary.
+
+    Why this is done this way:
+    - Planning and answer stages need a compact summary, not only raw stdout.
+    """
+
+    if not tool_results:
+        return "当前轮未触发工具调用。"
+
+    lines: list[str] = []
+    for result in tool_results:
+        status = "成功" if result["success"] else "失败"
+        summary = sanitize_text(result["stdout"] or result["stderr"] or "无输出")
+        lines.append(f"{result['tool_name']}：{status}；摘要：{summary[:200]}")
+    return "\n".join(lines)
+
+
+def tool_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The minimal automated tool-execution node.
+
+    What it does:
+    - Detects eligible local assets and triggers OCR, ASR, and video tools.
+    - Extends video handling into probe-plus-frame-extraction post-processing.
+    - Injects generated frame assets back into `input_assets` so downstream
+      planning and answering can see them directly.
+
+    Why this is done this way:
+    - This is the point where the project stops being a tool registry demo and
+      becomes an agent runtime that can automatically use tools from assets.
+    """
+
+    tool_registry = build_default_tool_registry()
+    available_tools = set(tool_registry.list_tool_names())
+    tool_results: list[ToolExecutionResult] = []
+    generated_assets: list[InputAsset] = []
+
+    logger.info(
+        "进入 tool_node trace_id=%s 输入资产数=%s 可用工具=%s",
+        state["trace_id"],
+        len(state["input_assets"]),
+        sorted(available_tools),
+    )
+
+    for asset in state["input_assets"]:
+        local_path = _resolve_local_asset_path(asset)
+        if not local_path:
+            continue
+
+        primary = _build_primary_tool_parameters(asset, local_path)
+        if primary is None:
+            continue
+
+        tool_name, parameters = primary
+        if tool_name in available_tools:
+            try:
+                result = tool_registry.execute(tool_name, state["trace_id"], parameters)
+                tool_results.append(result)
+            except ToolError as error:
+                logger.warning("tool_node 工具执行失败 trace_id=%s tool=%s", state["trace_id"], tool_name)
+                tool_results.append(
+                    {
+                        "tool_name": tool_name,
+                        "trace_id": state["trace_id"],
+                        "success": False,
+                        "exit_code": -1,
+                        "stdout": "",
+                        "stderr": sanitize_text(str(error)),
+                    }
+                )
+
+        if asset["kind"] != "video" or "video_ffmpeg_frame" not in available_tools:
+            if asset["kind"] != "video":
+                continue
+
+        if asset["kind"] == "video" and "video_ffmpeg_frame" in available_tools:
+            frame_output_path = _build_video_frame_output_path(state["trace_id"], local_path)
+            try:
+                frame_result = tool_registry.execute(
+                    "video_ffmpeg_frame",
+                    state["trace_id"],
+                    {"video_path": local_path, "output_path": frame_output_path},
+                )
+                tool_results.append(frame_result)
+                frame_path = Path(frame_output_path)
+                if frame_result["success"] and frame_path.exists():
+                    _, frame_asset = create_image_asset_from_reference(str(frame_path))
+                    frame_asset["source"] = "video_frame"
+                    frame_asset["content"] = sanitize_text(
+                        f"这是从视频 {Path(local_path).name} 自动抽取的关键帧。\n{frame_asset['content']}"
+                    )
+                    generated_assets.append(frame_asset)
+
+                    if "ocr_tesseract" in available_tools:
+                        ocr_result = tool_registry.execute(
+                            "ocr_tesseract",
+                            state["trace_id"],
+                            {"image_path": str(frame_path)},
+                        )
+                        tool_results.append(ocr_result)
+            except ToolError as error:
+                logger.warning("tool_node 视频抽帧失败 trace_id=%s video=%s", state["trace_id"], local_path)
+                tool_results.append(
+                    {
+                        "tool_name": "video_ffmpeg_frame",
+                        "trace_id": state["trace_id"],
+                        "success": False,
+                        "exit_code": -1,
+                        "stdout": "",
+                        "stderr": sanitize_text(str(error)),
+                    }
+                )
+
+        if asset["kind"] == "video" and "video_ffmpeg_audio" in available_tools:
+            audio_output_path = _build_video_audio_output_path(state["trace_id"], local_path)
+            try:
+                audio_result = tool_registry.execute(
+                    "video_ffmpeg_audio",
+                    state["trace_id"],
+                    {"video_path": local_path, "output_path": audio_output_path},
+                )
+                tool_results.append(audio_result)
+                audio_path = Path(audio_output_path)
+                if audio_result["success"] and audio_path.exists() and "asr_whisper" in available_tools:
+                    asr_result = tool_registry.execute(
+                        "asr_whisper",
+                        state["trace_id"],
+                        {"audio_path": str(audio_path), "model": "tiny"},
+                    )
+                    tool_results.append(asr_result)
+            except ToolError as error:
+                logger.warning("tool_node 视频抽音轨失败 trace_id=%s video=%s", state["trace_id"], local_path)
+                tool_results.append(
+                    {
+                        "tool_name": "video_ffmpeg_audio",
+                        "trace_id": state["trace_id"],
+                        "success": False,
+                        "exit_code": -1,
+                        "stdout": "",
+                        "stderr": sanitize_text(str(error)),
+                    }
+                )
+
+    logger.info(
+        "tool_node 执行完成 trace_id=%s 触发工具数=%s 生成资产数=%s",
+        state["trace_id"],
+        len(tool_results),
+        len(generated_assets),
+    )
+    return {
+        **state,
+        "input_assets": [*state["input_assets"], *generated_assets],
+        "tool_results": tool_results,
+        "task_state": _summarize_tool_results(tool_results),
+    }
+
+
+def plan_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The planning node.
+
+    What it does:
+    - Builds the planning prompt and calls the LLM for a task plan.
+
+    Why this is done this way:
+    - Planning before answering stabilizes behavior and lets the model reason
+      over tool outputs and generated frame assets.
+    """
+
+    prompt = build_plan_prompt(state)
+    logger.info(
+        "进入 plan_node trace_id=%s 历史消息数=%s 输入资产数=%s 工具结果数=%s",
+        state["trace_id"],
+        len(state["messages"]),
+        len(state["input_assets"]),
+        len(state["tool_results"]),
+    )
+    plan = call_llm(prompt, input_assets=state["input_assets"], trace_id=state["trace_id"])
+    logger.info("plan_node 执行完成 trace_id=%s", state["trace_id"])
+
+    return {
+        **state,
+        "user_input": sanitize_text(state["user_input"]),
+        "plan": plan,
+    }
+
+
+def answer_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The final answer node.
+
+    What it does:
+    - Builds the answer prompt, calls the LLM, and appends the assistant reply.
+
+    Why this is done this way:
+    - The answer stage needs the full state: conversation history, planning
+      output, tool results, and generated multimodal assets.
+    """
+
+    prompt = build_answer_prompt(state)
+    logger.info(
+        "进入 answer_node trace_id=%s 历史消息数=%s 输入资产数=%s 工具结果数=%s",
+        state["trace_id"],
+        len(state["messages"]),
+        len(state["input_assets"]),
+        len(state["tool_results"]),
+    )
+    answer = call_llm(prompt, input_assets=state["input_assets"], trace_id=state["trace_id"])
+    updated_messages = append_assistant_message(state["messages"], answer)
+    logger.info("answer_node 执行完成 trace_id=%s", state["trace_id"])
+
+    return {
+        **state,
+        "answer": answer,
+        "messages": updated_messages,
+    }
