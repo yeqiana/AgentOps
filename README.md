@@ -7,6 +7,9 @@
 - 阶段 1 已完成
 - CLI、HTTP API、多模态输入、工具网关、数据库、排障链路均已落地
 - 当前自动化测试基线：`47 tests, OK`
+- 阶段 2 已明确纳入：统一鉴权、失败重试、trace service
+- 阶段 3 已明确纳入：可视化 trace 与观测面板
+- 规划已补充：配置治理、版本治理、安全策略、限流与配额、成本治理
 
 ## 快速入口
 
@@ -43,6 +46,7 @@
 ### 企业级正式文档
 
 - [企业级文档总索引](docs/enterprise/README.md)
+- [阶段1最终验收结论单](docs/enterprise/阶段1最终验收结论单.md)
 - [总体设计](docs/enterprise/总体设计.md)
 - [需求规格说明书](docs/enterprise/需求规格说明书.md)
 - [详细设计说明书](docs/enterprise/详细设计说明书.md)
@@ -81,3 +85,9 @@
 
 - 每累计 3 次代码或结构改动，必须同步更新 `README.md` 和 `AGENTS.md`
 - 如果改动显著影响结构、运行方式、输入能力、测试方式或目录布局，则必须立即更新
+
+## 阶段 1 收口说明
+
+- `docs/enterprise/` 现在是企业级正式文档主版本目录
+- 原 `docs/architecture/reviews/` 下重复的阶段性评审文档已移除
+- 当前阶段 1 最终验收主依据为 `docs/enterprise/阶段1最终验收结论单.md`
