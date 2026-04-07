@@ -8,6 +8,9 @@
 - 分析型 Agent 后端底座
 - 支持 CLI 与 HTTP API
 - 支持多模态输入、上传、工具后处理、任务追踪与排障
+- 后续阶段 2 明确建设：统一鉴权、失败重试、trace service
+- 后续阶段 3 明确建设：可视化 trace 与观测能力
+- 后续规划已补充：配置治理、版本治理、安全策略、限流与配额、成本治理
 
 ## 当前文档体系
 
@@ -17,6 +20,7 @@
 - `docs/enterprise/`
 
 包含：
+- 阶段1最终验收结论单
 - 总体设计
 - 需求规格说明书
 - 详细设计说明书
@@ -83,6 +87,7 @@
 ## 使用建议
 
 对外评审、交付、培训时，优先引用：
+- `docs/enterprise/阶段1最终验收结论单.md`
 - `docs/enterprise/评审报告.md`
 - `docs/enterprise/使用指南` 对应文档为 `docs/enterprise/用户手册.md` 和 `docs/enterprise/操作指南.md`
 - `docs/enterprise/功能清单.md`
