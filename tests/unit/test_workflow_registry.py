@@ -29,8 +29,11 @@ class WorkflowRegistryTests(unittest.TestCase):
         self.assertTrue(registry.deliberation_keywords)
         self.assertTrue(registry.support_role.name)
         self.assertTrue(registry.challenge_role.name)
+        self.assertTrue(registry.planner_role.name)
+        self.assertTrue(registry.executor_role.name)
         self.assertTrue(registry.arbitration_role.name)
         self.assertTrue(registry.critic_role.name)
+        self.assertTrue(registry.reviewer_role.name)
 
     def test_registry_respects_environment_overrides(self) -> None:
         with patch.dict(
@@ -42,10 +45,16 @@ class WorkflowRegistryTests(unittest.TestCase):
                 "APP_WORKFLOW_SUPPORT_ROLE_INSTRUCTION": "优先说明方案价值。",
                 "APP_WORKFLOW_CHALLENGE_ROLE_NAME": "反方代理",
                 "APP_WORKFLOW_CHALLENGE_ROLE_INSTRUCTION": "优先说明方案风险。",
+                "APP_WORKFLOW_PLANNER_ROLE_NAME": "规划代理",
+                "APP_WORKFLOW_PLANNER_ROLE_INSTRUCTION": "优先拆解问题并形成执行顺序。",
+                "APP_WORKFLOW_EXECUTOR_ROLE_NAME": "执行代理",
+                "APP_WORKFLOW_EXECUTOR_ROLE_INSTRUCTION": "优先输出最终结论和落地动作。",
                 "APP_WORKFLOW_ARBITRATION_ROLE_NAME": "仲裁代理",
                 "APP_WORKFLOW_ARBITRATION_ROLE_INSTRUCTION": "优先整合双方观点。",
                 "APP_WORKFLOW_CRITIC_ROLE_NAME": "批评代理",
                 "APP_WORKFLOW_CRITIC_ROLE_INSTRUCTION": "优先指出答案缺陷。",
+                "APP_WORKFLOW_REVIEWER_ROLE_NAME": "复核代理",
+                "APP_WORKFLOW_REVIEWER_ROLE_INSTRUCTION": "优先给出复核结论。",
             },
             clear=False,
         ):
@@ -54,5 +63,8 @@ class WorkflowRegistryTests(unittest.TestCase):
         self.assertEqual(registry.deliberation_keywords, ["对比", "评估"])
         self.assertEqual(registry.support_role.name, "正方代理")
         self.assertEqual(registry.challenge_role.name, "反方代理")
+        self.assertEqual(registry.planner_role.name, "规划代理")
+        self.assertEqual(registry.executor_role.name, "执行代理")
         self.assertEqual(registry.arbitration_role.name, "仲裁代理")
         self.assertEqual(registry.critic_role.name, "批评代理")
+        self.assertEqual(registry.reviewer_role.name, "复核代理")

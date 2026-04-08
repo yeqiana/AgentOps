@@ -107,15 +107,18 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIn("deliberation_keywords", payload)
         self.assertIn("support_role", payload)
         self.assertIn("challenge_role", payload)
+        self.assertIn("planner_role", payload)
+        self.assertIn("executor_role", payload)
         self.assertIn("arbitration_role", payload)
         self.assertIn("critic_role", payload)
+        self.assertIn("reviewer_role", payload)
         self.assertTrue(payload["support_role"]["name"])
 
     def test_workflow_role_endpoints_can_query_and_update_role(self) -> None:
         list_response = self.client.get("/workflow/roles")
         self.assertEqual(list_response.status_code, 200)
         roles = list_response.json()["roles"]
-        self.assertGreaterEqual(len(roles), 4)
+        self.assertGreaterEqual(len(roles), 7)
 
         put_response = self.client.put(
             "/workflow/roles/critic",

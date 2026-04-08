@@ -35,8 +35,11 @@ class WorkflowPolicyRegistry:
     deliberation_keywords: list[str]
     support_role: DebateRoleDefinition
     challenge_role: DebateRoleDefinition
+    planner_role: DebateRoleDefinition
+    executor_role: DebateRoleDefinition
     arbitration_role: DebateRoleDefinition
     critic_role: DebateRoleDefinition
+    reviewer_role: DebateRoleDefinition
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -44,8 +47,11 @@ class WorkflowPolicyRegistry:
             "deliberation_keywords": list(self.deliberation_keywords),
             "support_role": asdict(self.support_role),
             "challenge_role": asdict(self.challenge_role),
+            "planner_role": asdict(self.planner_role),
+            "executor_role": asdict(self.executor_role),
             "arbitration_role": asdict(self.arbitration_role),
             "critic_role": asdict(self.critic_role),
+            "reviewer_role": asdict(self.reviewer_role),
         }
 
 
@@ -98,6 +104,22 @@ def build_workflow_policy_registry(
             or _get_env_override("APP_WORKFLOW_CHALLENGE_ROLE_INSTRUCTION")
             or effective_roles["challenge"]["role_instruction"],
         ),
+        planner_role=DebateRoleDefinition(
+            name=role_overrides["planner_role_name"]
+            or _get_env_override("APP_WORKFLOW_PLANNER_ROLE_NAME")
+            or effective_roles["planner"]["role_name"],
+            stance_instruction=role_overrides["planner_role_instruction"]
+            or _get_env_override("APP_WORKFLOW_PLANNER_ROLE_INSTRUCTION")
+            or effective_roles["planner"]["role_instruction"],
+        ),
+        executor_role=DebateRoleDefinition(
+            name=role_overrides["executor_role_name"]
+            or _get_env_override("APP_WORKFLOW_EXECUTOR_ROLE_NAME")
+            or effective_roles["executor"]["role_name"],
+            stance_instruction=role_overrides["executor_role_instruction"]
+            or _get_env_override("APP_WORKFLOW_EXECUTOR_ROLE_INSTRUCTION")
+            or effective_roles["executor"]["role_instruction"],
+        ),
         arbitration_role=DebateRoleDefinition(
             name=role_overrides["arbitration_role_name"]
             or _get_env_override("APP_WORKFLOW_ARBITRATION_ROLE_NAME")
@@ -113,5 +135,13 @@ def build_workflow_policy_registry(
             stance_instruction=role_overrides["critic_role_instruction"]
             or _get_env_override("APP_WORKFLOW_CRITIC_ROLE_INSTRUCTION")
             or effective_roles["critic"]["role_instruction"],
+        ),
+        reviewer_role=DebateRoleDefinition(
+            name=role_overrides["reviewer_role_name"]
+            or _get_env_override("APP_WORKFLOW_REVIEWER_ROLE_NAME")
+            or effective_roles["reviewer"]["role_name"],
+            stance_instruction=role_overrides["reviewer_role_instruction"]
+            or _get_env_override("APP_WORKFLOW_REVIEWER_ROLE_INSTRUCTION")
+            or effective_roles["reviewer"]["role_instruction"],
         ),
     )

@@ -40,8 +40,11 @@ class WorkflowRoleServiceTests(unittest.TestCase):
         role_keys = [item["role_key"] for item in roles]
         self.assertIn("support", role_keys)
         self.assertIn("challenge", role_keys)
+        self.assertIn("planner", role_keys)
+        self.assertIn("executor", role_keys)
         self.assertIn("arbitration", role_keys)
         self.assertIn("critic", role_keys)
+        self.assertIn("reviewer", role_keys)
 
     def test_db_override_beats_environment_role_default(self) -> None:
         service = WorkflowRoleService()
@@ -50,7 +53,7 @@ class WorkflowRoleServiceTests(unittest.TestCase):
             role_name="数据库批评代理",
             role_instruction="优先指出数据库覆盖后的问题。",
             is_enabled=True,
-            sort_order=40,
+            sort_order=50,
             role_type="review",
             description="test override",
             updated_by="tester",

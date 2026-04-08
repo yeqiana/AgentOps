@@ -29,7 +29,7 @@ from app.domain.errors import PersistenceError
 
 
 DEFAULT_DATABASE_URL = "sqlite:///data/agent.db"
-SCHEMA_VERSION = "2026_04_08_04"
+SCHEMA_VERSION = "2026_04_08_05"
 
 TABLE_SYS_SCHEMA_VERSION = "sys_schema_version"
 TABLE_SYS_USER = "sys_user"
@@ -626,7 +626,7 @@ def _upsert_schema_version(connection: sqlite3.Connection) -> None:
         """,
         (
             SCHEMA_VERSION,
-            "Introduce sys_alert_event for recovery and degradation alert records.",
+            "Extend stage-2 workflow role protocol with planner, executor, and reviewer roles.",
         ),
     )
 
@@ -693,6 +693,71 @@ def _seed_default_workflow_roles(connection: sqlite3.Connection) -> None:
         )
 
 
+def _seed_additional_workflow_roles(connection: sqlite3.Connection) -> None:
+    """
+    What this is:
+    - A schema-versioned seed extension for formal stage-2 workflow roles.
+
+    What it does:
+    - Inserts planner, executor, and reviewer roles when they are missing.
+
+    Why this is done this way:
+    - Earlier stage-2 schemas only seeded support/challenge/arbitration/critic.
+    - A dedicated additive seed keeps compatibility with existing databases
+      while extending the role protocol without destructive migration logic.
+    """
+
+    timestamp = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+    additional_roles = (
+        (
+            "workflow_role_planner",
+            "planner",
+            "规划代理",
+            "优先梳理用户目标、上下文约束、工具结果与执行路径，生成可执行计划。",
+            1,
+            25,
+            "execution",
+            "正式规划角色",
+        ),
+        (
+            "workflow_role_executor",
+            "executor",
+            "执行代理",
+            "优先依据规划、工具结果和仲裁结论生成最终可执行回答。",
+            1,
+            35,
+            "execution",
+            "正式执行角色",
+        ),
+        (
+            "workflow_role_reviewer",
+            "reviewer",
+            "复核代理",
+            "优先根据答案、工具结果和批评摘要给出复核结论与发布建议。",
+            1,
+            50,
+            "review",
+            "正式复核角色",
+        ),
+    )
+    for role in additional_roles:
+        connection.execute(
+            f"""
+            INSERT INTO {TABLE_SYS_WORKFLOW_ROLE} (
+                id, role_key, role_name, role_instruction, is_enabled, sort_order, role_type, description,
+                created_by, updated_by, created_at, updated_at,
+                ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?,
+                'system', 'system', {timestamp}, {timestamp},
+                '', '', '', '', ''
+            )
+            ON CONFLICT(role_key) DO NOTHING
+            """,
+            role,
+        )
+
+
 def ensure_database_initialized() -> None:
     database_path = _resolve_sqlite_path(get_database_url())
     database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -705,6 +770,7 @@ def ensure_database_initialized() -> None:
         _drop_redundant_legacy_tables(connection)
         _upsert_schema_version(connection)
         _seed_default_workflow_roles(connection)
+        _seed_additional_workflow_roles(connection)
         for statement in INDEX_STATEMENTS:
             connection.execute(statement)
         connection.commit()

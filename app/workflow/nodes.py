@@ -348,7 +348,12 @@ def plan_node(state: AgentState) -> AgentState:
       over tool outputs and generated frame assets.
     """
 
-    prompt = build_plan_prompt(state)
+    registry = build_workflow_policy_registry()
+    prompt = build_plan_prompt(
+        state,
+        role_name=registry.planner_role.name,
+        stance_instruction=registry.planner_role.stance_instruction,
+    )
     logger.info(
         "进入 plan_node trace_id=%s 历史消息数=%s 输入资产数=%s 工具结果数=%s",
         state["trace_id"],
@@ -458,7 +463,12 @@ def answer_node(state: AgentState) -> AgentState:
       output, tool results, and generated multimodal assets.
     """
 
-    prompt = build_answer_prompt(state)
+    registry = build_workflow_policy_registry()
+    prompt = build_answer_prompt(
+        state,
+        role_name=registry.executor_role.name,
+        stance_instruction=registry.executor_role.stance_instruction,
+    )
     logger.info(
         "进入 answer_node trace_id=%s 历史消息数=%s 输入资产数=%s 工具结果数=%s",
         state["trace_id"],
@@ -518,12 +528,14 @@ def review_node(state: AgentState) -> AgentState:
       workflow easier to audit and prepares the graph for future review agents.
     """
 
+    registry = build_workflow_policy_registry()
     review_status, review_summary = review_answer(
         answer=state["answer"],
         tool_results=state["tool_results"],
         critic_summary=state["critic_summary"],
         arbitration_summary=state["arbitration_summary"],
     )
+    review_summary = f"{registry.reviewer_role.name}：{review_summary}"
     logger.info("review_node 执行完成 trace_id=%s review_status=%s", state["trace_id"], review_status)
     return {
         **state,

@@ -256,8 +256,11 @@ class WorkflowConfigPayload(BaseModel):
     deliberation_keywords: list[str]
     support_role: WorkflowRolePayload
     challenge_role: WorkflowRolePayload
+    planner_role: WorkflowRolePayload
+    executor_role: WorkflowRolePayload
     arbitration_role: WorkflowRolePayload
     critic_role: WorkflowRolePayload
+    reviewer_role: WorkflowRolePayload
 
 
 class WorkflowConfigResponse(BaseModel):

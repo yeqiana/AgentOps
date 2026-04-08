@@ -22,6 +22,12 @@ from typing import Any
 
 from app.config import (
     get_allowed_tools,
+    get_workflow_executor_role_instruction,
+    get_workflow_executor_role_name,
+    get_workflow_planner_role_instruction,
+    get_workflow_planner_role_name,
+    get_workflow_reviewer_role_instruction,
+    get_workflow_reviewer_role_name,
     is_recovery_llm_degrade_to_mock_enabled,
     is_recovery_tool_soft_fail_enabled,
     get_upload_allowed_kinds,
@@ -110,6 +116,22 @@ class RuntimeConfigService:
                 overrides.get("challenge_role_instruction"),
                 get_workflow_challenge_role_instruction(),
             ),
+            "planner_role_name": self._as_str(
+                overrides.get("planner_role_name"),
+                get_workflow_planner_role_name(),
+            ),
+            "planner_role_instruction": self._as_str(
+                overrides.get("planner_role_instruction"),
+                get_workflow_planner_role_instruction(),
+            ),
+            "executor_role_name": self._as_str(
+                overrides.get("executor_role_name"),
+                get_workflow_executor_role_name(),
+            ),
+            "executor_role_instruction": self._as_str(
+                overrides.get("executor_role_instruction"),
+                get_workflow_executor_role_instruction(),
+            ),
             "arbitration_role_name": self._as_str(
                 overrides.get("arbitration_role_name"),
                 get_workflow_arbitration_role_name(),
@@ -125,6 +147,14 @@ class RuntimeConfigService:
             "critic_role_instruction": self._as_str(
                 overrides.get("critic_role_instruction"),
                 get_workflow_critic_role_instruction(),
+            ),
+            "reviewer_role_name": self._as_str(
+                overrides.get("reviewer_role_name"),
+                get_workflow_reviewer_role_name(),
+            ),
+            "reviewer_role_instruction": self._as_str(
+                overrides.get("reviewer_role_instruction"),
+                get_workflow_reviewer_role_instruction(),
             ),
         }
 
@@ -150,10 +180,16 @@ class RuntimeConfigService:
             "support_role_instruction": overrides.get("support_role_instruction"),
             "challenge_role_name": overrides.get("challenge_role_name"),
             "challenge_role_instruction": overrides.get("challenge_role_instruction"),
+            "planner_role_name": overrides.get("planner_role_name"),
+            "planner_role_instruction": overrides.get("planner_role_instruction"),
+            "executor_role_name": overrides.get("executor_role_name"),
+            "executor_role_instruction": overrides.get("executor_role_instruction"),
             "arbitration_role_name": overrides.get("arbitration_role_name"),
             "arbitration_role_instruction": overrides.get("arbitration_role_instruction"),
             "critic_role_name": overrides.get("critic_role_name"),
             "critic_role_instruction": overrides.get("critic_role_instruction"),
+            "reviewer_role_name": overrides.get("reviewer_role_name"),
+            "reviewer_role_instruction": overrides.get("reviewer_role_instruction"),
         }
 
     def get_effective_security_config(self) -> dict[str, Any]:

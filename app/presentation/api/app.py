@@ -292,6 +292,16 @@ def create_app():
                     name=registry.challenge_role.name,
                     stance_instruction=registry.challenge_role.stance_instruction,
                 ),
+                planner_role=WorkflowRolePayload(
+                    role_key="planner",
+                    name=registry.planner_role.name,
+                    stance_instruction=registry.planner_role.stance_instruction,
+                ),
+                executor_role=WorkflowRolePayload(
+                    role_key="executor",
+                    name=registry.executor_role.name,
+                    stance_instruction=registry.executor_role.stance_instruction,
+                ),
                 arbitration_role=WorkflowRolePayload(
                     role_key="arbitration",
                     name=registry.arbitration_role.name,
@@ -301,6 +311,11 @@ def create_app():
                     role_key="critic",
                     name=registry.critic_role.name,
                     stance_instruction=registry.critic_role.stance_instruction,
+                ),
+                reviewer_role=WorkflowRolePayload(
+                    role_key="reviewer",
+                    name=registry.reviewer_role.name,
+                    stance_instruction=registry.reviewer_role.stance_instruction,
                 ),
             )
         )
