@@ -466,12 +466,14 @@ def create_app():
     def list_alerts(
         severity: str | None = None,
         source_type: str | None = None,
+        trace_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> AlertEventListResponse:
         alerts = alert_service.list_alerts(
             severity=sanitize_text(severity or "") or None,
             source_type=sanitize_text(source_type or "") or None,
+            trace_id=sanitize_text(trace_id or "") or None,
             limit=max(1, min(limit, 100)),
             offset=max(0, offset),
         )
@@ -511,6 +513,31 @@ def create_app():
                 created_at=alert["created_at"],
                 updated_at=alert["updated_at"],
             )
+        )
+
+    @app.get("/traces/{trace_id}/alerts", response_model=AlertEventListResponse, responses={404: {"model": ErrorResponse}})
+    def list_trace_alerts(trace_id: str) -> AlertEventListResponse:
+        normalized_trace_id = sanitize_text(trace_id)
+        trace = trace_service.get_trace(normalized_trace_id)
+        if not trace:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+        alerts = alert_service.list_alerts(trace_id=normalized_trace_id, limit=100, offset=0)
+        return AlertEventListResponse(
+            alerts=[
+                AlertEventPayload(
+                    id=item["id"],
+                    trace_id=item["trace_id"],
+                    source_type=item["source_type"],
+                    source_name=item["source_name"],
+                    severity=item["severity"],
+                    event_code=item["event_code"],
+                    message=item["message"],
+                    payload_json=item["payload_json"],
+                    created_at=item["created_at"],
+                    updated_at=item["updated_at"],
+                )
+                for item in alerts
+            ]
         )
 
     @app.post("/assets/analyze", response_model=AnalyzeAssetResponse, responses={400: {"model": ErrorResponse}})

@@ -24,6 +24,7 @@ from unittest.mock import patch
 
 from app.infrastructure.alert import get_alert_service
 from app.domain.errors import AgentError
+from app.infrastructure.trace import TraceService
 from app.presentation.api import create_app
 
 
@@ -276,6 +277,36 @@ class ApiHttpTests(unittest.TestCase):
         detail_payload = detail_response.json()["alert"]
         self.assertEqual(detail_payload["id"], alert["id"])
         self.assertEqual(detail_payload["event_code"], "llm_retry_exhausted")
+
+    def test_trace_alert_endpoint_returns_alerts_for_trace(self) -> None:
+        get_alert_service().create_alert(
+            trace_id="trace_linked_alert",
+            source_type="tool",
+            source_name="ffmpeg",
+            severity="error",
+            event_code="tool_circuit_opened",
+            message="工具连续失败已触发熔断。",
+            payload={"failure_count": 3},
+        )
+
+        trace_service = TraceService()
+        trace_service.begin_request(
+            trace_id="trace_linked_alert",
+            request_id="req_trace_linked",
+            method="GET",
+            path="/tools",
+            auth_subject="tester",
+            auth_type="api_key",
+            idempotency_key="",
+        )
+        trace_service.finish_request("trace_linked_alert", status_code=200)
+
+        response = self.client.get("/traces/trace_linked_alert/alerts")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["alerts"]
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["trace_id"], "trace_linked_alert")
+        self.assertEqual(payload[0]["event_code"], "tool_circuit_opened")
 
     def test_chat_sessions_and_task_endpoints(self) -> None:
         chat_response = self.client.post(

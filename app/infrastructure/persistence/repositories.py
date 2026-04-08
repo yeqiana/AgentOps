@@ -454,6 +454,7 @@ class SQLiteAlertEventRepository:
         *,
         severity: str | None = None,
         source_type: str | None = None,
+        trace_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[AlertEventRecord]:
@@ -471,6 +472,9 @@ class SQLiteAlertEventRepository:
         if source_type:
             clauses.append("source_type = ?")
             parameters.append(source_type)
+        if trace_id:
+            clauses.append("trace_id = ?")
+            parameters.append(trace_id)
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"

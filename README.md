@@ -86,6 +86,7 @@ docs/
 - `PUT /workflow/roles/{role_key}`
 - `GET /security/config`
 - `GET /traces/{trace_id}`
+- `GET /traces/{trace_id}/alerts`
 - `GET /alerts`
 - `GET /alerts/{alert_id}`
 
