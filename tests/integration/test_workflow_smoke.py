@@ -60,7 +60,12 @@ class WorkflowSmokeTests(unittest.TestCase):
         result = graph.invoke(state)
 
         self.assertTrue(result["plan"])
+        self.assertTrue(result["debate_summary"])
+        self.assertTrue(result["arbitration_summary"])
         self.assertTrue(result["answer"])
+        self.assertTrue(result["route_name"])
+        self.assertTrue(result["critic_summary"])
+        self.assertTrue(result["review_status"])
         self.assertGreaterEqual(len(result["messages"]), 2)
         self.assertEqual(result["messages"][-1]["role"], "assistant")
 
@@ -87,6 +92,9 @@ class WorkflowSmokeTests(unittest.TestCase):
 
         self.assertTrue(result["plan"])
         self.assertTrue(result["answer"])
+        self.assertEqual(result["route_name"], "image_analysis")
+        self.assertIn("当前路由未启用", result["debate_summary"])
+        self.assertIn("批评代理", result["critic_summary"])
 
     def test_graph_invoke_writes_tool_results_when_local_tool_is_available(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -120,6 +128,61 @@ class WorkflowSmokeTests(unittest.TestCase):
         self.assertEqual(result["tool_results"][0]["tool_name"], "ocr_tesseract")
         self.assertIn("TOOL OCR RESULT", result["tool_results"][0]["stdout"])
         self.assertIn("ocr_tesseract", result["task_state"])
+        self.assertEqual(result["route_name"], "image_analysis")
+        self.assertIn(result["review_status"], {"approved", "needs_attention"})
+
+    def test_deliberation_route_runs_debate_and_arbitration(self) -> None:
+        graph = build_graph()
+        state = create_initial_state()
+        state["user_input"] = "请比较两个方案的优缺点并给出建议"
+        state["messages"] = [{"role": "user", "content": "请比较两个方案的优缺点并给出建议"}]
+        state["input_assets"] = [
+            {
+                "kind": "text",
+                "name": "text_input",
+                "content": "请比较两个方案的优缺点并给出建议",
+                "source": "test",
+                "storage_mode": "inline_text",
+            }
+        ]
+
+        result = graph.invoke(state)
+
+        self.assertEqual(result["route_name"], "deliberation_chat")
+        self.assertIn("支持方代理", result["debate_summary"])
+        self.assertIn("质疑方代理", result["debate_summary"])
+        self.assertIn("仲裁代理", result["arbitration_summary"])
+
+    def test_deliberation_route_respects_configured_roles(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "APP_WORKFLOW_SUPPORT_ROLE_NAME": "方案支持代理",
+                "APP_WORKFLOW_SUPPORT_ROLE_INSTRUCTION": "优先指出方案的优势与收益。",
+                "APP_WORKFLOW_CHALLENGE_ROLE_NAME": "方案质疑代理",
+                "APP_WORKFLOW_CHALLENGE_ROLE_INSTRUCTION": "优先指出方案的风险与限制。",
+            },
+            clear=False,
+        ):
+            graph = build_graph()
+            state = create_initial_state()
+            state["user_input"] = "请比较两个方案的优缺点并给出建议"
+            state["messages"] = [{"role": "user", "content": "请比较两个方案的优缺点并给出建议"}]
+            state["input_assets"] = [
+                {
+                    "kind": "text",
+                    "name": "text_input",
+                    "content": "请比较两个方案的优缺点并给出建议",
+                    "source": "test",
+                    "storage_mode": "inline_text",
+                }
+            ]
+
+            result = graph.invoke(state)
+
+        self.assertEqual(result["route_name"], "deliberation_chat")
+        self.assertIn("方案支持代理", result["debate_summary"])
+        self.assertIn("方案质疑代理", result["debate_summary"])
 
     def test_video_post_processing_generates_frame_asset(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -38,7 +38,14 @@ class TaskService:
     def __init__(self, tool_registry: ToolRegistry) -> None:
         self.tool_registry = tool_registry
 
-    def prepare_turn_state(self, state: AgentState, user_input: str, input_assets: list[InputAsset]) -> AgentState:
+    def prepare_turn_state(
+        self,
+        state: AgentState,
+        user_input: str,
+        input_assets: list[InputAsset],
+        *,
+        trace_id: str | None = None,
+    ) -> AgentState:
         updated_messages = append_user_message(state["messages"], sanitize_text(user_input))
         runtime_context = {**state["runtime_context"], "tools": self.tool_registry.list_tool_names()}
         return {
@@ -51,7 +58,14 @@ class TaskService:
             "tool_results": [],
             "turn_id": _generate_identifier("turn"),
             "task_id": _generate_identifier("task"),
-            "trace_id": _generate_identifier("trace"),
+            "trace_id": sanitize_text(trace_id or "") or _generate_identifier("trace"),
+            "route_name": "",
+            "route_reason": "",
+            "debate_summary": "",
+            "arbitration_summary": "",
             "runtime_context": runtime_context,
+            "critic_summary": "",
+            "review_status": "",
+            "review_summary": "",
             "last_error": None,
         }

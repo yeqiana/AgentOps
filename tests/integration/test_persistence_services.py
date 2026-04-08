@@ -59,6 +59,13 @@ class PersistenceServiceTests(unittest.TestCase):
         )
         current_state["plan"] = "先理解任务，再总结文本。"
         current_state["answer"] = "这是总结结果。"
+        current_state["route_name"] = "direct_chat"
+        current_state["route_reason"] = "普通文本任务。"
+        current_state["debate_summary"] = "当前路由未启用多 Agent 辩论。"
+        current_state["arbitration_summary"] = "当前路由未启用仲裁。"
+        current_state["critic_summary"] = "批评代理认为当前结果可交付。"
+        current_state["review_status"] = "approved"
+        current_state["review_summary"] = "结果可交付。"
         current_state["messages"] = [
             {"role": "user", "content": "请总结这段文本"},
             {"role": "assistant", "content": "这是总结结果。"},
@@ -86,6 +93,11 @@ class PersistenceServiceTests(unittest.TestCase):
         self.assertEqual(task["task"]["id"], current_state["task_id"])
         self.assertEqual(task["task"]["status"], "completed")
         self.assertEqual(task["task"]["session_id"], current_state["session_id"])
+        self.assertEqual(task["task"]["route_name"], "direct_chat")
+        self.assertEqual(task["task"]["debate_summary"], "当前路由未启用多 Agent 辩论。")
+        self.assertEqual(task["task"]["arbitration_summary"], "当前路由未启用仲裁。")
+        self.assertEqual(task["task"]["critic_summary"], "批评代理认为当前结果可交付。")
+        self.assertEqual(task["task"]["review_status"], "approved")
         self.assertEqual(len(task["tool_results"]), 1)
         self.assertEqual(task["tool_results"][0]["tool_name"], "python_echo")
 
@@ -106,6 +118,13 @@ class PersistenceServiceTests(unittest.TestCase):
             ],
         )
         current_state["messages"] = [{"role": "user", "content": "请分析这张图片"}]
+        current_state["route_name"] = "multimodal_analysis"
+        current_state["route_reason"] = "检测到图片输入。"
+        current_state["debate_summary"] = "当前路由未启用多 Agent 辩论。"
+        current_state["arbitration_summary"] = "当前路由未启用仲裁。"
+        current_state["critic_summary"] = "批评代理认为任务失败，需要人工处理。"
+        current_state["review_status"] = "needs_attention"
+        current_state["review_summary"] = "任务失败，需人工复核。"
         current_state["tool_results"] = [
             {
                 "tool_name": "ocr_tesseract",
@@ -131,6 +150,11 @@ class PersistenceServiceTests(unittest.TestCase):
         self.assertIsNotNone(task)
         self.assertEqual(task["task"]["status"], "failed")
         self.assertEqual(task["task"]["error_message"], "graph invoke failed")
+        self.assertEqual(task["task"]["route_name"], "multimodal_analysis")
+        self.assertEqual(task["task"]["debate_summary"], "当前路由未启用多 Agent 辩论。")
+        self.assertEqual(task["task"]["arbitration_summary"], "当前路由未启用仲裁。")
+        self.assertEqual(task["task"]["critic_summary"], "批评代理认为任务失败，需要人工处理。")
+        self.assertEqual(task["task"]["review_status"], "needs_attention")
         self.assertEqual(len(task["tool_results"]), 1)
         self.assertEqual(task["tool_results"][0]["tool_name"], "ocr_tesseract")
         self.assertEqual(len(bundle["messages"]), 1)

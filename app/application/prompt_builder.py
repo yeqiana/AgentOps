@@ -1,13 +1,16 @@
 """
-Prompt 编排模块。
-这是什么：
-- 这是 Agent 底座的 Prompt 组装层。
-做什么：
-- 提供底座级 Prompt 模板。
-- 根据状态动态拼装规划 Prompt 和回答 Prompt。
-为什么这么做：
-- Prompt 是 Agent 底座最重要的业务资产之一，应该集中维护。
-- 把 Prompt 组装从工作流节点中剥离后，节点会更薄。
+Prompt builder layer.
+
+What this is:
+- The centralized prompt composition module for the agent base.
+
+What it does:
+- Builds shared base prompts.
+- Builds plan, answer, debate, arbitration, and critic prompts from state.
+
+Why this is done this way:
+- Prompt assets are business-critical. They should be maintained in one place
+  instead of being scattered across workflow nodes.
 """
 
 from __future__ import annotations
@@ -45,18 +48,16 @@ CAPABILITY_PROMPT = """
 CONTEXT_PROMPT = """
 当前上下文如下：
 - 用户画像或偏好：{user_profile}
-- 当前对话历史：
-{conversation_history}
+- 当前对话历史：{conversation_history}
 - 当前任务状态：{task_state}
+- 当前路由决策：{route_summary}
 """
 
 TASK_PROMPT = """
 当前用户请求如下：
 - 用户输入：{user_input}
-- 当前输入资产：
-{input_assets}
-- 当前工具结果：
-{tool_results}
+- 当前输入资产：{input_assets}
+- 当前工具结果：{tool_results}
 """
 
 OUTPUT_PROMPT = """
@@ -76,6 +77,30 @@ PLAN_STAGE_PROMPT = """
 ANSWER_STAGE_PROMPT = """
 你现在处于执行阶段。请基于底座规则、运行时能力、历史上下文、当前输入和工具结果直接完成用户任务。
 优先给结果，再补必要说明。
+"""
+
+CRITIC_STAGE_PROMPT = """
+你现在处于批评阶段。请站在质量复核代理的角度，用 2 到 4 句话指出：
+1. 当前答案是否完整回应了用户任务
+2. 是否遗漏了工具结果、上下文约束或风险说明
+3. 如果需要修改，最关键的改进点是什么
+"""
+
+DEBATE_STAGE_PROMPT = """
+你现在处于辩论阶段，当前角色是：{role_name}。
+你的立场要求是：{stance_instruction}
+
+请用 2 到 4 句话输出你的观点：
+1. 你认为当前任务最应该优先关注什么
+2. 你对当前规划的支持点或质疑点是什么
+3. 你建议最终回答重点保留哪些信息
+"""
+
+ARBITRATION_STAGE_PROMPT = """
+你现在处于仲裁阶段。请基于当前规划、辩论双方观点和用户任务，输出 2 到 4 句话：
+1. 哪一方观点更可取，原因是什么
+2. 最终回答必须保留哪些要点
+3. 最终回答需要避免哪些风险或遗漏
 """
 
 
@@ -156,6 +181,7 @@ def _render_context_prompt(state: AgentState) -> str:
         user_profile=state["user_profile"] or "暂无",
         conversation_history=_render_conversation_history(state),
         task_state=state["task_state"] or "暂无任务状态。",
+        route_summary=f"{state['route_name']}：{state['route_reason']}" if state["route_name"] else "尚未生成路由决策。",
     )
 
 
@@ -188,29 +214,65 @@ def _build_shared_prompt(state: AgentState) -> str:
 
 
 def build_plan_prompt(state: AgentState) -> str:
-    """
-    构建规划阶段 Prompt。
-    这是什么：
-    - 给规划节点使用的 Prompt 构造函数。
-    做什么：
-    - 在共享 Prompt 主体后追加规划阶段指令。
-    为什么这么做：
-    - 规划和回答共享同一份底座认知，只是目标不同。
-    """
-
     return f"{_build_shared_prompt(state)}\n\n{PLAN_STAGE_PROMPT.strip()}"
 
 
 def build_answer_prompt(state: AgentState) -> str:
-    """
-    构建回答阶段 Prompt。
-    这是什么：
-    - 给回答节点使用的 Prompt 构造函数。
-    做什么：
-    - 在共享 Prompt 主体后追加当前规划和执行阶段指令。
-    为什么这么做：
-    - 最终回答需要看见规划结果和工具结果，才能体现“先规划、后执行”的行为。
-    """
-
     plan_text = state["plan"] or "暂无规划结果。"
-    return f"{_build_shared_prompt(state)}\n\n当前轮规划结果：\n{plan_text}\n\n{ANSWER_STAGE_PROMPT.strip()}"
+    review_text = state["review_summary"] or "尚未执行结果复核。"
+    debate_text = state["debate_summary"] or "当前路由未启用多 Agent 辩论。"
+    arbitration_text = state["arbitration_summary"] or "当前路由未启用仲裁。"
+    return (
+        f"{_build_shared_prompt(state)}\n\n当前轮规划结果：\n{plan_text}\n\n"
+        f"当前辩论摘要：{debate_text}\n"
+        f"当前仲裁摘要：{arbitration_text}\n"
+        f"当前复核状态：{state['review_status'] or 'unknown'}\n"
+        f"当前复核摘要：{review_text}\n\n"
+        f"{ANSWER_STAGE_PROMPT.strip()}"
+    )
+
+
+def build_critic_prompt(
+    state: AgentState,
+    *,
+    role_name: str = "批评代理",
+    stance_instruction: str = "优先指出答案的遗漏、风险和说明不足，并给出最关键的修改建议。",
+) -> str:
+    plan_text = state["plan"] or "暂无规划结果。"
+    answer_text = state["answer"] or "暂无最终答案。"
+    debate_text = state["debate_summary"] or "当前路由未启用多 Agent 辩论。"
+    arbitration_text = state["arbitration_summary"] or "当前路由未启用仲裁。"
+    return (
+        f"{_build_shared_prompt(state)}\n\n当前轮规划结果：\n{plan_text}\n\n"
+        f"当前辩论摘要：{debate_text}\n"
+        f"当前仲裁摘要：{arbitration_text}\n\n"
+        f"当前批评角色：{role_name}\n"
+        f"当前批评立场：{stance_instruction}\n\n"
+        f"当前最终答案：\n{answer_text}\n\n"
+        f"{CRITIC_STAGE_PROMPT.strip()}"
+    )
+
+
+def build_debate_prompt(state: AgentState, *, role_name: str, stance_instruction: str) -> str:
+    plan_text = state["plan"] or "暂无规划结果。"
+    return (
+        f"{_build_shared_prompt(state)}\n\n当前轮规划结果：\n{plan_text}\n\n"
+        f"{DEBATE_STAGE_PROMPT.format(role_name=role_name, stance_instruction=stance_instruction).strip()}"
+    )
+
+
+def build_arbitration_prompt(
+    state: AgentState,
+    *,
+    role_name: str = "仲裁代理",
+    stance_instruction: str = "优先整理支持与质疑两方的观点，并给出最终可执行的取舍与输出要点。",
+) -> str:
+    plan_text = state["plan"] or "暂无规划结果。"
+    debate_text = state["debate_summary"] or "当前没有辩论摘要。"
+    return (
+        f"{_build_shared_prompt(state)}\n\n当前轮规划结果：\n{plan_text}\n\n"
+        f"当前辩论摘要：\n{debate_text}\n\n"
+        f"当前仲裁角色：{role_name}\n"
+        f"当前仲裁立场：{stance_instruction}\n\n"
+        f"{ARBITRATION_STAGE_PROMPT.strip()}"
+    )

@@ -26,6 +26,7 @@ from app.application.audio_service import create_audio_asset_from_reference
 from app.application.file_service import create_file_asset_from_reference
 from app.application.image_service import create_image_asset_from_reference
 from app.application.video_service import create_video_asset_from_reference
+from app.config import get_upload_allowed_kinds, get_upload_max_bytes
 from app.domain.errors import ValidationError
 from app.domain.models import InputAsset
 from app.infrastructure.llm.client import sanitize_text
@@ -115,8 +116,18 @@ def create_uploaded_asset(
         raise ValidationError("上传文件名不能为空。")
     if not data:
         raise ValidationError("上传文件内容不能为空。")
+    if len(data) > get_upload_max_bytes():
+        raise ValidationError(
+            "上传文件超过大小限制。",
+            details={"size_bytes": len(data), "max_bytes": get_upload_max_bytes()},
+        )
 
     inferred_kind = infer_asset_kind(cleaned_filename, content_type=content_type, requested_kind=kind)
+    if inferred_kind not in get_upload_allowed_kinds():
+        raise ValidationError(
+            "上传文件类型不在允许范围内。",
+            details={"kind": inferred_kind, "allowed_kinds": get_upload_allowed_kinds()},
+        )
     saved_path = save_uploaded_bytes(data, original_filename=cleaned_filename)
     saved_reference = str(saved_path.resolve())
 

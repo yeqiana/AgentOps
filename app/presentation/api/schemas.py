@@ -34,8 +34,15 @@ class ChatResponse(BaseModel):
     turn_id: str
     task_id: str
     trace_id: str
+    route_name: str
+    route_reason: str
     plan: str
+    debate_summary: str
+    arbitration_summary: str
     answer: str
+    critic_summary: str
+    review_status: str
+    review_summary: str
     tool_names: list[str]
     asset_count: int
 
@@ -99,8 +106,15 @@ class TaskPayload(BaseModel):
     trace_id: str
     status: str
     user_input: str
+    route_name: str
+    route_reason: str
     plan: str
+    debate_summary: str
+    arbitration_summary: str
     answer: str
+    critic_summary: str
+    review_status: str
+    review_summary: str
     tool_count: int
     error_message: str
     created_at: str
@@ -182,3 +196,110 @@ class ErrorResponse(BaseModel):
     message: str
     trace_id: str | None = None
     details: dict[str, object] = Field(default_factory=dict)
+
+
+class TracePayload(BaseModel):
+    trace_id: str
+    request_id: str
+    method: str
+    path: str
+    auth_subject: str
+    auth_type: str
+    session_id: str
+    turn_id: str
+    task_id: str
+    status_code: int
+    error_code: str
+    idempotency_key: str
+    rate_limited: bool
+    started_at: str
+    updated_at: str
+
+
+class TraceResponse(BaseModel):
+    trace: TracePayload
+
+
+class WorkflowRolePayload(BaseModel):
+    role_key: str = ""
+    name: str
+    stance_instruction: str
+    is_enabled: bool = True
+    sort_order: int = 0
+    role_type: str = ""
+    description: str = ""
+
+
+class WorkflowConfigPayload(BaseModel):
+    deliberation_enabled: bool
+    deliberation_keywords: list[str]
+    support_role: WorkflowRolePayload
+    challenge_role: WorkflowRolePayload
+    arbitration_role: WorkflowRolePayload
+    critic_role: WorkflowRolePayload
+
+
+class WorkflowConfigResponse(BaseModel):
+    workflow: WorkflowConfigPayload
+
+
+class WorkflowRoleListResponse(BaseModel):
+    roles: list[WorkflowRolePayload]
+
+
+class WorkflowRoleUpsertRequest(BaseModel):
+    name: str = Field(min_length=1, description="角色名称。")
+    stance_instruction: str = Field(min_length=1, description="角色立场或职责指令。")
+    is_enabled: bool = Field(default=True, description="角色是否启用。")
+    sort_order: int = Field(default=100, description="角色排序，数值越小越靠前。")
+    role_type: str = Field(default="custom", description="角色类型，例如 debate / review / custom。")
+    description: str = Field(default="", description="角色说明。")
+    updated_by: str = Field(default="api-role", description="本次角色修改的操作人。")
+
+
+class WorkflowRoleUpsertResponse(BaseModel):
+    role: WorkflowRolePayload
+
+
+class SecurityConfigPayload(BaseModel):
+    allowed_tools: list[str]
+    upload_allowed_kinds: list[str]
+    upload_max_bytes: int
+    auth_enabled: bool
+    rate_limit_enabled: bool
+    idempotency_enabled: bool
+
+
+class SecurityConfigResponse(BaseModel):
+    security: SecurityConfigPayload
+
+
+class RuntimeConfigItemPayload(BaseModel):
+    id: str
+    config_scope: str
+    config_key: str
+    config_value: str
+    value_type: str
+    config_source: str
+    description: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+
+
+class RuntimeConfigListResponse(BaseModel):
+    configs: list[RuntimeConfigItemPayload]
+
+
+class RuntimeConfigUpsertRequest(BaseModel):
+    config_scope: str = Field(min_length=1, description="配置作用域，例如 workflow 或 security。")
+    config_key: str = Field(min_length=1, description="配置键名。")
+    config_value: str = Field(description="配置值，统一按字符串提交。")
+    value_type: str = Field(default="str", description="配置值类型，例如 bool / int / csv / str。")
+    description: str = Field(default="", description="配置项说明。")
+    updated_by: str = Field(default="api-config", description="本次配置修改的操作人。")
+
+
+class RuntimeConfigUpsertResponse(BaseModel):
+    config: RuntimeConfigItemPayload

@@ -63,3 +63,31 @@ class UploadServiceTests(unittest.TestCase):
             self.assertEqual(asset["storage_mode"], "local_path")
             self.assertEqual(asset["local_path"], saved_path)
             self.assertTrue(Path(saved_path).exists())
+
+    def test_create_uploaded_asset_rejects_oversized_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"APP_DOWNLOAD_DIR": temp_dir, "APP_UPLOAD_MAX_BYTES": "4"},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(Exception, "上传文件超过大小限制"):
+                create_uploaded_asset(
+                    filename="note.txt",
+                    data=b"hello upload",
+                    content_type="text/plain",
+                    kind="file",
+                )
+
+    def test_create_uploaded_asset_rejects_disallowed_kind(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {"APP_DOWNLOAD_DIR": temp_dir, "APP_UPLOAD_ALLOWED_KINDS": "image"},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(Exception, "上传文件类型不在允许范围内"):
+                create_uploaded_asset(
+                    filename="note.txt",
+                    data=b"hello upload",
+                    content_type="text/plain",
+                    kind="file",
+                )
