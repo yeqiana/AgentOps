@@ -17,6 +17,12 @@ Why this is done this way:
 from __future__ import annotations
 
 from app.config import (
+    get_workflow_executor_role_instruction,
+    get_workflow_executor_role_name,
+    get_workflow_planner_role_instruction,
+    get_workflow_planner_role_name,
+    get_workflow_reviewer_role_instruction,
+    get_workflow_reviewer_role_name,
     get_workflow_arbitration_role_instruction,
     get_workflow_arbitration_role_name,
     get_workflow_challenge_role_instruction,
@@ -36,7 +42,7 @@ class WorkflowRoleService:
     - The workflow-role registry service used by stage-2 orchestration.
 
     What it does:
-    - Provides current support/challenge/arbitration/critic role definitions.
+    - Provides current support/challenge/planner/executor/arbitration/critic/reviewer role definitions.
     - Supports querying and updating persisted role definitions.
 
     Why this is done this way:
@@ -71,6 +77,24 @@ class WorkflowRoleService:
                 sort_order=20,
                 description="默认质疑方角色",
             ),
+            "planner": self._fallback_role(
+                records.get("planner"),
+                role_key="planner",
+                role_name=get_workflow_planner_role_name(),
+                role_instruction=get_workflow_planner_role_instruction(),
+                role_type="execution",
+                sort_order=25,
+                description="正式规划角色",
+            ),
+            "executor": self._fallback_role(
+                records.get("executor"),
+                role_key="executor",
+                role_name=get_workflow_executor_role_name(),
+                role_instruction=get_workflow_executor_role_instruction(),
+                role_type="execution",
+                sort_order=35,
+                description="正式执行角色",
+            ),
             "arbitration": self._fallback_role(
                 records.get("arbitration"),
                 role_key="arbitration",
@@ -88,6 +112,15 @@ class WorkflowRoleService:
                 role_type="review",
                 sort_order=40,
                 description="默认批评角色",
+            ),
+            "reviewer": self._fallback_role(
+                records.get("reviewer"),
+                role_key="reviewer",
+                role_name=get_workflow_reviewer_role_name(),
+                role_instruction=get_workflow_reviewer_role_instruction(),
+                role_type="review",
+                sort_order=50,
+                description="正式复核角色",
             ),
         }
 

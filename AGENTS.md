@@ -21,7 +21,7 @@
 
 - 表名统一使用 `xxx_xxx`
 - 系统表统一使用 `sys_` 前缀
-- 业务表暂不使用前缀，如果有，请改正
+- 业务表统一使用 `biz_` 前缀
 - 禁止外键约束
 - 所有表必须有主键
 - 所有表必须包含：
@@ -54,9 +54,10 @@
   - 恢复告警记录、查询与 trace 关联查询
   - 基础重试与熔断降级
   - 配置化恢复策略
-  - router / debate / arbitration / critic / review 最小多角色编排
+  - `router / debate / arbitration / critic / review` 最小多角色编排
   - 数据库驱动运行时配置中心
   - 数据库驱动角色注册
+  - 正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
 - 阶段 2 后续继续建设：
   - 失败恢复增强
   - 策略中心深化

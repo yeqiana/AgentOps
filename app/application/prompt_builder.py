@@ -213,11 +213,26 @@ def _build_shared_prompt(state: AgentState) -> str:
     return "\n\n".join(parts)
 
 
-def build_plan_prompt(state: AgentState) -> str:
-    return f"{_build_shared_prompt(state)}\n\n{PLAN_STAGE_PROMPT.strip()}"
+def build_plan_prompt(
+    state: AgentState,
+    *,
+    role_name: str = "规划代理",
+    stance_instruction: str = "优先梳理用户目标、上下文约束、工具结果与执行路径，形成稳定计划。",
+) -> str:
+    return (
+        f"{_build_shared_prompt(state)}\n\n"
+        f"当前规划角色：{role_name}\n"
+        f"当前规划职责：{stance_instruction}\n\n"
+        f"{PLAN_STAGE_PROMPT.strip()}"
+    )
 
 
-def build_answer_prompt(state: AgentState) -> str:
+def build_answer_prompt(
+    state: AgentState,
+    *,
+    role_name: str = "执行代理",
+    stance_instruction: str = "优先依据规划、工具结果和仲裁结论生成最终可执行回答。",
+) -> str:
     plan_text = state["plan"] or "暂无规划结果。"
     review_text = state["review_summary"] or "尚未执行结果复核。"
     debate_text = state["debate_summary"] or "当前路由未启用多 Agent 辩论。"
@@ -228,6 +243,8 @@ def build_answer_prompt(state: AgentState) -> str:
         f"当前仲裁摘要：{arbitration_text}\n"
         f"当前复核状态：{state['review_status'] or 'unknown'}\n"
         f"当前复核摘要：{review_text}\n\n"
+        f"当前执行角色：{role_name}\n"
+        f"当前执行职责：{stance_instruction}\n\n"
         f"{ANSWER_STAGE_PROMPT.strip()}"
     )
 
@@ -247,7 +264,7 @@ def build_critic_prompt(
         f"当前辩论摘要：{debate_text}\n"
         f"当前仲裁摘要：{arbitration_text}\n\n"
         f"当前批评角色：{role_name}\n"
-        f"当前批评立场：{stance_instruction}\n\n"
+        f"当前批评职责：{stance_instruction}\n\n"
         f"当前最终答案：\n{answer_text}\n\n"
         f"{CRITIC_STAGE_PROMPT.strip()}"
     )
@@ -273,6 +290,6 @@ def build_arbitration_prompt(
         f"{_build_shared_prompt(state)}\n\n当前轮规划结果：\n{plan_text}\n\n"
         f"当前辩论摘要：\n{debate_text}\n\n"
         f"当前仲裁角色：{role_name}\n"
-        f"当前仲裁立场：{stance_instruction}\n\n"
+        f"当前仲裁职责：{stance_instruction}\n\n"
         f"{ARBITRATION_STAGE_PROMPT.strip()}"
     )
