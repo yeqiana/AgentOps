@@ -1,21 +1,26 @@
 """
-大模型客户端模块。
-这是什么：
-- 这是项目统一的模型接入层。
-做什么：
-- 读取模型配置。
-- 创建 OpenAI 兼容客户端。
-- 暴露统一的 `call_llm` 接口。
-- 在支持视觉输入时，把真实图片资产一起传给模型。
-为什么这么做：
-- 上层只应该关心“要给模型什么任务和什么输入”，不应该理解 SDK 细节。
-- 错误在这里统一翻译成领域错误，更有利于排障。
+LLM client module.
+
+What this is:
+- The unified model access layer for the current Agent runtime.
+
+What it does:
+- Loads provider configuration.
+- Builds an OpenAI-compatible client.
+- Exposes a stable `call_llm` entrypoint.
+- Supports image multimodal input blocks when image assets are available.
+- Applies retry, circuit-breaker, alerting, and optional degradation strategy.
+
+Why this is done this way:
+- Upper layers should only care about prompts, assets, and results instead of
+  SDK details.
+- Recovery, degradation, and observability need one stable place to avoid
+  policy drift across CLI, API, and workflow code.
 """
 
 from __future__ import annotations
 
 import os
-import time
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -29,6 +34,7 @@ from openai import (
     RateLimitError,
 )
 
+from app.application.services.config_service import RuntimeConfigService
 from app.config import (
     get_llm_circuit_failure_threshold,
     get_llm_circuit_recovery_seconds,
@@ -50,13 +56,15 @@ logger = get_logger("infrastructure.llm.client")
 
 class LLMCallError(ModelError):
     """
-    模型调用错误。
-    这是什么：
-    - 模型层对外暴露的统一错误类型。
-    做什么：
-    - 屏蔽底层 SDK 异常，向上层返回稳定错误对象。
-    为什么这么做：
-    - 应用层和 API 层不应该依赖第三方 SDK 的异常结构。
+    What this is:
+    - The stable model-layer error exposed to upper layers.
+
+    What it does:
+    - Wraps SDK and provider failures into a repository-level domain error.
+
+    Why this is done this way:
+    - API handlers and workflow nodes should not depend on third-party SDK
+      exception shapes.
     """
 
     def __init__(self, message: str, trace_id: str | None = None, details: dict[str, str] | None = None) -> None:
@@ -66,16 +74,6 @@ class LLMCallError(ModelError):
 
 @dataclass(frozen=True)
 class LLMSettings:
-    """
-    模型配置对象。
-    这是什么：
-    - LLM 接入层的只读配置模型。
-    做什么：
-    - 保存 provider、model、api_key 和 base_url。
-    为什么这么做：
-    - 集中配置比到处传散乱参数更清晰。
-    """
-
     provider: str
     model: str
     api_key: str
@@ -112,15 +110,6 @@ PROVIDER_DEFAULTS = {
 
 
 def sanitize_text(text: str) -> str:
-    """
-    清理文本。
-    这是什么：
-    - 统一的文本清洗函数。
-    做什么：
-    - 去除非法代理字符并裁剪首尾空白。
-    为什么这么做：
-    - Windows 终端和外部输入容易带入编码脏数据。
-    """
     return text.encode("utf-8", errors="replace").decode("utf-8").strip()
 
 
@@ -141,15 +130,6 @@ def _build_error_message(prefix: str, provider: str, model: str, error: Exceptio
 
 @lru_cache(maxsize=1)
 def get_llm_settings() -> LLMSettings:
-    """
-    读取并缓存模型配置。
-    这是什么：
-    - 模型配置读取入口。
-    做什么：
-    - 从环境变量解析 provider、model、api_key 和 base_url。
-    为什么这么做：
-    - 同一次运行中配置通常不变，缓存后可以减少重复解析。
-    """
     provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
     defaults = _get_provider_defaults(provider)
 
@@ -179,15 +159,6 @@ def get_llm_settings() -> LLMSettings:
 
 @lru_cache(maxsize=1)
 def get_llm_client() -> OpenAI:
-    """
-    获取模型客户端。
-    这是什么：
-    - OpenAI 兼容客户端的懒加载入口。
-    做什么：
-    - 根据当前配置创建并缓存客户端。
-    为什么这么做：
-    - 客户端无需每次调用都重新创建。
-    """
     settings = get_llm_settings()
     client_kwargs = {"api_key": settings.api_key}
     if settings.base_url:
@@ -227,18 +198,31 @@ def _build_message_content(prompt: str, input_assets: list[InputAsset] | None) -
     return [{"type": "text", "text": prompt}, *image_parts]
 
 
+def _build_mock_response(cleaned_prompt: str, input_assets: list[InputAsset] | None, *, degraded: bool) -> str:
+    has_image_assets = any(asset["kind"] == "image" for asset in (input_assets or []))
+    prefix = "这是一个降级 mock " if degraded else "这是一个本地 mock "
+    if "仲裁阶段" in cleaned_prompt:
+        return f"{prefix}仲裁代理：建议保留双方共同认可的关键点，并在最终答案中补充风险与限制说明。"
+    if "辩论阶段" in cleaned_prompt:
+        if any(keyword in cleaned_prompt for keyword in {"支持方", "强项", "保留", "有效路径"}):
+            return f"{prefix}支持方代理：当前规划覆盖了主要任务目标，最终答案应优先给出直接结论和关键依据。"
+        return f"{prefix}质疑方代理：当前规划仍需强调限制条件、失败风险或潜在遗漏，避免结论过度乐观。"
+    if "批评阶段" in cleaned_prompt:
+        return f"{prefix}批评代理：当前结果基本完整，但如果涉及工具失败或明显限制，需要在答案中明确说明。"
+    if "规划阶段" in cleaned_prompt:
+        if has_image_assets:
+            return f"{prefix}规划结果：先读取图片输入，再结合上下文给出分析。"
+        return f"{prefix}规划结果：先理解任务，再结合上下文生成答案。"
+    if has_image_assets:
+        return f"{prefix}最终答案，用于验证真实图片入口和多模态消息拼装是否正常。"
+    return f"{prefix}最终答案，用于验证 Agent 底座流程是否正常。"
+
+
+def _get_recovery_config() -> dict[str, object]:
+    return RuntimeConfigService().get_effective_recovery_config()
+
+
 def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id: str | None = None) -> str:
-    """
-    调用大模型并返回文本结果。
-    这是什么：
-    - 给上层使用的统一模型调用接口。
-    做什么：
-    - 在 mock 模式下返回本地结果。
-    - 在真实模式下走 chat completions。
-    - 统一转换底层异常。
-    为什么这么做：
-    - 保持上层调用简单，也把排障信息统一留在模型层。
-    """
     settings = get_llm_settings()
     cleaned_prompt = sanitize_text(prompt)
     message_content = _build_message_content(cleaned_prompt, input_assets)
@@ -252,31 +236,31 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
     logger.debug("发送给模型的 prompt：\n%s", cleaned_prompt)
 
     if settings.provider == "mock":
-        has_image_assets = any(asset["kind"] == "image" for asset in (input_assets or []))
-        if "仲裁阶段" in cleaned_prompt:
-            return "仲裁代理结论：建议保留双方共同认可的关键点，并在最终答案中补充风险与限制说明。"
-        if "辩论阶段" in cleaned_prompt:
-            if any(keyword in cleaned_prompt for keyword in {"支持方", "强项", "保留", "有效路径"}):
-                return "支持方代理观点：当前规划覆盖了主要任务目标，最终答案应优先给出直接结论和关键依据。"
-            return "质疑方代理观点：当前规划仍需强调限制条件、失败风险或潜在遗漏，避免结论过度乐观。"
-        if "批评阶段" in cleaned_prompt:
-            return "批评代理意见：当前结果基本完整，但如果涉及工具失败或明显限制，需要在答案中明确说明。"
-        if "规划阶段" in cleaned_prompt:
-            if has_image_assets:
-                return "这是一个本地 mock 规划结果：先读取图片输入，再结合上下文给出分析。"
-            return "这是一个本地 mock 规划结果：先理解任务，再结合上下文生成答案。"
-        if has_image_assets:
-            return "这是一个本地 mock 最终答案，用于验证真实图片入口和多模态消息拼装是否正常。"
-        return "这是一个本地 mock 最终答案，用于验证 Agent 底座流程是否正常。"
+        return _build_mock_response(cleaned_prompt, input_assets, degraded=False)
+
+    recovery_config = _get_recovery_config()
+    llm_degrade_to_mock = bool(recovery_config["llm_degrade_to_mock"])
 
     breaker = None
-    if settings.provider != "mock" and is_llm_circuit_enabled():
+    if is_llm_circuit_enabled():
         breaker = get_circuit_breaker(
             f"llm:{settings.provider}:{settings.model}",
             failure_threshold=get_llm_circuit_failure_threshold(),
             recovery_seconds=get_llm_circuit_recovery_seconds(),
         )
         if not breaker.allow_request():
+            if llm_degrade_to_mock:
+                emit_recovery_alert(
+                    trace_id=trace_id or "none",
+                    source_type="llm",
+                    source_name=f"{settings.provider}:{settings.model}",
+                    severity="warning",
+                    event_code="llm_degraded_to_mock",
+                    message="模型熔断开启后已降级到 mock 响应。",
+                    payload={"provider": settings.provider, "model": settings.model},
+                )
+                return _build_mock_response(cleaned_prompt, input_assets, degraded=True)
+
             emit_recovery_alert(
                 trace_id=trace_id or "none",
                 source_type="llm",
@@ -346,6 +330,46 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
     def _should_retry(error: Exception) -> bool:
         return isinstance(error, LLMCallError) and error.details.get("retryable") == "true"
 
+    def _handle_retryable_failure(error: LLMCallError) -> str | None:
+        if breaker is not None and error.details.get("retryable") == "true":
+            breaker.record_failure()
+            if breaker.opened_until > 0:
+                emit_recovery_alert(
+                    trace_id=trace_id or "none",
+                    source_type="llm",
+                    source_name=f"{settings.provider}:{settings.model}",
+                    severity="error",
+                    event_code="llm_circuit_opened",
+                    message="模型连续失败已触发熔断。",
+                    payload={
+                        "provider": settings.provider,
+                        "model": settings.model,
+                        "failure_count": breaker.failure_count,
+                    },
+                )
+            else:
+                emit_recovery_alert(
+                    trace_id=trace_id or "none",
+                    source_type="llm",
+                    source_name=f"{settings.provider}:{settings.model}",
+                    severity="warning",
+                    event_code="llm_retry_exhausted" if is_llm_retry_enabled() else "llm_request_failed",
+                    message="模型重试后仍失败。" if is_llm_retry_enabled() else "模型请求失败。",
+                    payload={"provider": settings.provider, "model": settings.model},
+                )
+            if llm_degrade_to_mock:
+                emit_recovery_alert(
+                    trace_id=trace_id or "none",
+                    source_type="llm",
+                    source_name=f"{settings.provider}:{settings.model}",
+                    severity="warning",
+                    event_code="llm_degraded_to_mock",
+                    message="模型失败后已降级到 mock 响应。",
+                    payload={"provider": settings.provider, "model": settings.model},
+                )
+                return _build_mock_response(cleaned_prompt, input_assets, degraded=True)
+        return None
+
     if is_llm_retry_enabled():
         try:
             response = execute_with_retry(
@@ -355,63 +379,17 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
                 should_retry=_should_retry,
             )
         except LLMCallError as error:
-            if breaker is not None and error.details.get("retryable") == "true":
-                breaker.record_failure()
-                if breaker.opened_until > 0:
-                    emit_recovery_alert(
-                        trace_id=trace_id or "none",
-                        source_type="llm",
-                        source_name=f"{settings.provider}:{settings.model}",
-                        severity="error",
-                        event_code="llm_circuit_opened",
-                        message="模型连续失败已触发熔断。",
-                        payload={
-                            "provider": settings.provider,
-                            "model": settings.model,
-                            "failure_count": breaker.failure_count,
-                        },
-                    )
-                else:
-                    emit_recovery_alert(
-                        trace_id=trace_id or "none",
-                        source_type="llm",
-                        source_name=f"{settings.provider}:{settings.model}",
-                        severity="warning",
-                        event_code="llm_retry_exhausted",
-                        message="模型重试后仍失败。",
-                        payload={"provider": settings.provider, "model": settings.model},
-                    )
+            degraded_result = _handle_retryable_failure(error)
+            if degraded_result is not None:
+                return degraded_result
             raise
     else:
         try:
             response = _invoke()
         except LLMCallError as error:
-            if breaker is not None and error.details.get("retryable") == "true":
-                breaker.record_failure()
-                if breaker.opened_until > 0:
-                    emit_recovery_alert(
-                        trace_id=trace_id or "none",
-                        source_type="llm",
-                        source_name=f"{settings.provider}:{settings.model}",
-                        severity="error",
-                        event_code="llm_circuit_opened",
-                        message="模型连续失败已触发熔断。",
-                        payload={
-                            "provider": settings.provider,
-                            "model": settings.model,
-                            "failure_count": breaker.failure_count,
-                        },
-                    )
-                else:
-                    emit_recovery_alert(
-                        trace_id=trace_id or "none",
-                        source_type="llm",
-                        source_name=f"{settings.provider}:{settings.model}",
-                        severity="warning",
-                        event_code="llm_request_failed",
-                        message="模型请求失败。",
-                        payload={"provider": settings.provider, "model": settings.model},
-                    )
+            degraded_result = _handle_retryable_failure(error)
+            if degraded_result is not None:
+                return degraded_result
             raise
 
     if breaker is not None:

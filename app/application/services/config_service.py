@@ -22,6 +22,8 @@ from typing import Any
 
 from app.config import (
     get_allowed_tools,
+    is_recovery_llm_degrade_to_mock_enabled,
+    is_recovery_tool_soft_fail_enabled,
     get_upload_allowed_kinds,
     get_upload_max_bytes,
     get_workflow_arbitration_role_instruction,
@@ -174,6 +176,19 @@ class RuntimeConfigService:
             "idempotency_enabled": self._as_bool(
                 overrides.get("idempotency_enabled"),
                 is_idempotency_enabled(),
+            ),
+        }
+
+    def get_effective_recovery_config(self) -> dict[str, Any]:
+        overrides = self._load_scope_overrides("recovery")
+        return {
+            "llm_degrade_to_mock": self._as_bool(
+                overrides.get("llm_degrade_to_mock"),
+                is_recovery_llm_degrade_to_mock_enabled(),
+            ),
+            "tool_soft_fail": self._as_bool(
+                overrides.get("tool_soft_fail"),
+                is_recovery_tool_soft_fail_enabled(),
             ),
         }
 

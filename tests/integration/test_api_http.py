@@ -235,6 +235,25 @@ class ApiHttpTests(unittest.TestCase):
         security_payload = security_response.json()["security"]
         self.assertEqual(security_payload["upload_max_bytes"], 2048)
 
+    def test_runtime_config_endpoints_affect_recovery_snapshot(self) -> None:
+        put_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "recovery",
+                "config_key": "llm_degrade_to_mock",
+                "config_value": "true",
+                "value_type": "bool",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(put_response.status_code, 200)
+
+        recovery_response = self.client.get("/recovery/config")
+        self.assertEqual(recovery_response.status_code, 200)
+        recovery_payload = recovery_response.json()["recovery"]
+        self.assertTrue(recovery_payload["llm_degrade_to_mock"])
+
     def test_trace_endpoint_returns_request_trace(self) -> None:
         response = self.client.post(
             "/chat",

@@ -123,3 +123,28 @@ class LlmRetryTests(unittest.TestCase):
         alerts = get_alert_service().list_alerts(source_type="llm")
         self.assertGreaterEqual(len(alerts), 2)
         self.assertEqual(alerts[0]["source_type"], "llm")
+
+    def test_call_llm_can_degrade_to_mock_after_retryable_failure(self) -> None:
+        retryable = LLMCallError("temporary", details={"retryable": "true"})
+        with patch("app.infrastructure.llm.client.get_llm_settings") as mock_settings, patch(
+            "app.infrastructure.llm.client.get_llm_client"
+        ) as mock_client, patch(
+            "app.infrastructure.llm.client.is_llm_retry_enabled",
+            return_value=False,
+        ), patch(
+            "app.infrastructure.llm.client.RuntimeConfigService"
+        ) as mock_runtime_config_service:
+            mock_settings.return_value = type(
+                "SettingsLike",
+                (),
+                {"provider": "openai", "model": "gpt-4o-mini", "api_key": "k", "base_url": None},
+            )()
+            mock_client.return_value.chat.completions.create.side_effect = retryable
+            mock_runtime_config_service.return_value.get_effective_recovery_config.return_value = {
+                "llm_degrade_to_mock": True,
+                "tool_soft_fail": False,
+            }
+
+            result = call_llm("普通问答", trace_id="trace_test")
+
+        self.assertIn("降级 mock", result)

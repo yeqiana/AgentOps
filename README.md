@@ -21,6 +21,7 @@
 - trace 查询
 - 恢复告警查询
 - 模型与工具的基础重试、熔断与降级
+- 配置化恢复策略：LLM 降级到 mock、工具 soft-fail
 - router / debate / arbitration / critic / review 多角色工作流
 - 数据库驱动运行时配置中心
 - 数据库驱动角色注册
@@ -85,6 +86,7 @@ docs/
 - `GET /workflow/roles`
 - `PUT /workflow/roles/{role_key}`
 - `GET /security/config`
+- `GET /recovery/config`
 - `GET /traces/{trace_id}`
 - `GET /traces/{trace_id}/alerts`
 - `GET /alerts`

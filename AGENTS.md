@@ -53,6 +53,7 @@
   - trace service
   - 恢复告警记录、查询与 trace 关联查询
   - 基础重试与熔断降级
+  - 配置化恢复策略
   - router / debate / arbitration / critic / review 最小多角色编排
   - 数据库驱动运行时配置中心
   - 数据库驱动角色注册

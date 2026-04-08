@@ -295,6 +295,15 @@ class SecurityConfigResponse(BaseModel):
     security: SecurityConfigPayload
 
 
+class RecoveryConfigPayload(BaseModel):
+    llm_degrade_to_mock: bool
+    tool_soft_fail: bool
+
+
+class RecoveryConfigResponse(BaseModel):
+    recovery: RecoveryConfigPayload
+
+
 class RuntimeConfigItemPayload(BaseModel):
     id: str
     config_scope: str

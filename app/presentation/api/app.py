@@ -48,6 +48,8 @@ from app.presentation.api.schemas import (
     ChatResponse,
     ErrorResponse,
     HealthResponse,
+    RecoveryConfigPayload,
+    RecoveryConfigResponse,
     RuntimeConfigItemPayload,
     RuntimeConfigListResponse,
     RuntimeConfigUpsertRequest,
@@ -359,6 +361,16 @@ def create_app():
                 auth_enabled=effective_security["auth_enabled"],
                 rate_limit_enabled=effective_security["rate_limit_enabled"],
                 idempotency_enabled=effective_security["idempotency_enabled"],
+            )
+        )
+
+    @app.get("/recovery/config", response_model=RecoveryConfigResponse)
+    def get_recovery_config() -> RecoveryConfigResponse:
+        effective_recovery = config_service.get_effective_recovery_config()
+        return RecoveryConfigResponse(
+            recovery=RecoveryConfigPayload(
+                llm_degrade_to_mock=effective_recovery["llm_degrade_to_mock"],
+                tool_soft_fail=effective_recovery["tool_soft_fail"],
             )
         )
 
