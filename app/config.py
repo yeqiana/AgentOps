@@ -59,6 +59,8 @@ WORKFLOW_CRITIC_ROLE_INSTRUCTION_ENV = "APP_WORKFLOW_CRITIC_ROLE_INSTRUCTION"
 ALLOWED_TOOLS_ENV = "APP_ALLOWED_TOOLS"
 UPLOAD_MAX_BYTES_ENV = "APP_UPLOAD_MAX_BYTES"
 UPLOAD_ALLOWED_KINDS_ENV = "APP_UPLOAD_ALLOWED_KINDS"
+RECOVERY_LLM_DEGRADE_TO_MOCK_ENV = "APP_RECOVERY_LLM_DEGRADE_TO_MOCK"
+RECOVERY_TOOL_SOFT_FAIL_ENV = "APP_RECOVERY_TOOL_SOFT_FAIL"
 
 DEFAULT_USER_PROFILE = "默认用户，无额外偏好。"
 DEFAULT_TASK_STATE = "当前无长期任务状态。"
@@ -84,6 +86,8 @@ DEFAULT_CRITIC_ROLE_INSTRUCTION = "优先指出答案的遗漏、风险和说明
 DEFAULT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024
 DEFAULT_UPLOAD_ALLOWED_KINDS = ["image", "audio", "video", "file"]
 DEFAULT_ALLOWED_TOOLS: list[str] = []
+DEFAULT_RECOVERY_LLM_DEGRADE_TO_MOCK = False
+DEFAULT_RECOVERY_TOOL_SOFT_FAIL = False
 
 
 def _get_bool_env(name: str, default: bool = False) -> bool:
@@ -338,3 +342,11 @@ def get_upload_max_bytes() -> int:
 
 def get_upload_allowed_kinds() -> list[str]:
     return _get_csv_env(UPLOAD_ALLOWED_KINDS_ENV, DEFAULT_UPLOAD_ALLOWED_KINDS)
+
+
+def is_recovery_llm_degrade_to_mock_enabled() -> bool:
+    return _get_bool_env(RECOVERY_LLM_DEGRADE_TO_MOCK_ENV, default=DEFAULT_RECOVERY_LLM_DEGRADE_TO_MOCK)
+
+
+def is_recovery_tool_soft_fail_enabled() -> bool:
+    return _get_bool_env(RECOVERY_TOOL_SOFT_FAIL_ENV, default=DEFAULT_RECOVERY_TOOL_SOFT_FAIL)

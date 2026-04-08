@@ -126,3 +126,21 @@ class ToolRegistryTests(unittest.TestCase):
         alerts = get_alert_service().list_alerts(source_type="tool")
         self.assertGreaterEqual(len(alerts), 2)
         self.assertEqual(alerts[0]["source_type"], "tool")
+
+    def test_local_runner_can_soft_fail_when_recovery_policy_enabled(self) -> None:
+        runner = LocalToolRunner()
+        with patch("app.infrastructure.tools.local_runner.is_tool_retry_enabled", return_value=False), patch(
+            "app.infrastructure.tools.local_runner.RuntimeConfigService"
+        ) as mock_runtime_config_service, patch(
+            "app.infrastructure.tools.local_runner.subprocess.run",
+            side_effect=OSError("temporary"),
+        ):
+            mock_runtime_config_service.return_value.get_effective_recovery_config.return_value = {
+                "llm_degrade_to_mock": False,
+                "tool_soft_fail": True,
+            }
+            result = runner.run(["fake-tool"], trace_id="trace_test")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["exit_code"], -1)
+        self.assertIn("soft-fail", result["stderr"])

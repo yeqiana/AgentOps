@@ -15,6 +15,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from app.application.services.config_service import RuntimeConfigService
 from app.config import (
     get_tool_circuit_failure_threshold,
     get_tool_circuit_recovery_seconds,
@@ -49,6 +50,19 @@ class LocalToolRunner:
         cwd: str | None = None,
         input_text: str | None = None,
     ) -> ToolExecutionResult:
+        recovery_config = RuntimeConfigService().get_effective_recovery_config()
+        tool_soft_fail = bool(recovery_config["tool_soft_fail"])
+
+        def _soft_failure_result(message: str) -> ToolExecutionResult:
+            return {
+                "tool_name": command[0],
+                "trace_id": trace_id,
+                "success": False,
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": message,
+            }
+
         breaker = None
         if is_tool_circuit_enabled():
             breaker = get_circuit_breaker(
@@ -57,6 +71,17 @@ class LocalToolRunner:
                 recovery_seconds=get_tool_circuit_recovery_seconds(),
             )
             if not breaker.allow_request():
+                if tool_soft_fail:
+                    emit_recovery_alert(
+                        trace_id=trace_id,
+                        source_type="tool",
+                        source_name=command[0],
+                        severity="warning",
+                        event_code="tool_degraded_soft_fail",
+                        message="本地工具熔断已开启，已降级为 soft-fail 返回。",
+                        payload={"command": " ".join(command)},
+                    )
+                    return _soft_failure_result("本地工具熔断已开启，本次调用已降级为 soft-fail。")
                 emit_recovery_alert(
                     trace_id=trace_id,
                     source_type="tool",
@@ -134,6 +159,17 @@ class LocalToolRunner:
                         message="本地工具重试后仍失败。" if is_tool_retry_enabled() else "本地工具请求失败。",
                         payload={"command": " ".join(command)},
                     )
+                if tool_soft_fail:
+                    emit_recovery_alert(
+                        trace_id=trace_id,
+                        source_type="tool",
+                        source_name=command[0],
+                        severity="warning",
+                        event_code="tool_degraded_soft_fail",
+                        message="本地工具失败后已降级为 soft-fail 返回。",
+                        payload={"command": " ".join(command)},
+                    )
+                    return _soft_failure_result("本地工具调用失败，已按恢复策略降级为 soft-fail。")
             raise
 
         if breaker is not None:
