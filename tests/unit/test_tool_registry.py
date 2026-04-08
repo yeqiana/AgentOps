@@ -1,12 +1,19 @@
 """
-工具网关测试。
-这是什么：
-- 这是阶段 1 工具网关的单元测试文件。
-做什么：
-- 验证工具注册、执行和环境发现逻辑。
-为什么这么做：
-- 如果工具网关一开始就不稳定，后面再接 OCR、ASR 和视频处理时会更难排障。
+Tool registry tests.
+
+What this is:
+- Unit tests for the stage-2 tool gateway and local runner.
+
+What it does:
+- Verifies tool registration, whitelist behavior, retries, circuit breaking,
+  and alert persistence for tool failures.
+
+Why this is done this way:
+- Tool execution is part of the runtime contract. Once alerts are added to the
+  recovery flow, failures need to be observable as well as recoverable.
 """
+
+from __future__ import annotations
 
 import os
 import tempfile
@@ -15,21 +22,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.domain.errors import ToolError
+from app.infrastructure.alert import get_alert_service
 from app.infrastructure.tools.failure_recovery import reset_circuit_breakers
 from app.infrastructure.tools.local_runner import LocalToolRunner
 from app.infrastructure.tools.registry import ToolRegistry, build_default_tool_registry
 
 
 class ToolRegistryTests(unittest.TestCase):
-    """
-    工具网关测试用例。
-    这是什么：
-    - `unittest.TestCase` 子类。
-    做什么：
-    - 组织工具注册和执行相关断言。
-    为什么这么做：
-    - 当前阶段只做最小工具网关，所以更要验证这个最小闭环真的可用。
-    """
+    def tearDown(self) -> None:
+        get_alert_service.cache_clear()
+        reset_circuit_breakers()
 
     def test_default_registry_can_execute_tool(self) -> None:
         registry = build_default_tool_registry()
@@ -37,9 +39,6 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["stdout"], "hello")
         self.assertEqual(result["tool_name"], "python_echo")
-
-    def tearDown(self) -> None:
-        reset_circuit_breakers()
 
     def test_execute_unknown_tool_raises_tool_error(self) -> None:
         registry = ToolRegistry()
@@ -124,3 +123,6 @@ class ToolRegistryTests(unittest.TestCase):
                 runner.run(["fake-tool"], trace_id="trace_test")
 
         self.assertIn("熔断已开启", str(second_error.exception))
+        alerts = get_alert_service().list_alerts(source_type="tool")
+        self.assertGreaterEqual(len(alerts), 2)
+        self.assertEqual(alerts[0]["source_type"], "tool")

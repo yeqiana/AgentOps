@@ -22,6 +22,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from app.infrastructure.alert import get_alert_service
 from app.domain.errors import AgentError
 from app.presentation.api import create_app
 
@@ -70,6 +71,7 @@ class ApiHttpTests(unittest.TestCase):
             "APP_IDEMPOTENCY_TTL_SECONDS",
         ]:
             os.environ.pop(name, None)
+        get_alert_service.cache_clear()
         self.temp_dir.cleanup()
 
     def test_health_endpoint(self) -> None:
@@ -251,6 +253,29 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(trace_payload["task_id"], payload["task_id"])
         self.assertEqual(trace_payload["session_id"], payload["session_id"])
         self.assertEqual(trace_payload["status_code"], 200)
+
+    def test_alert_endpoints_can_query_persisted_alerts(self) -> None:
+        alert = get_alert_service().create_alert(
+            trace_id="trace_alert_test",
+            source_type="llm",
+            source_name="openai:gpt-4o-mini",
+            severity="warning",
+            event_code="llm_retry_exhausted",
+            message="模型重试后仍失败。",
+            payload={"attempts": 2},
+        )
+
+        list_response = self.client.get("/alerts?source_type=llm")
+        self.assertEqual(list_response.status_code, 200)
+        alerts = list_response.json()["alerts"]
+        self.assertGreaterEqual(len(alerts), 1)
+        self.assertEqual(alerts[0]["source_type"], "llm")
+
+        detail_response = self.client.get(f"/alerts/{alert['id']}")
+        self.assertEqual(detail_response.status_code, 200)
+        detail_payload = detail_response.json()["alert"]
+        self.assertEqual(detail_payload["id"], alert["id"])
+        self.assertEqual(detail_payload["event_code"], "llm_retry_exhausted")
 
     def test_chat_sessions_and_task_endpoints(self) -> None:
         chat_response = self.client.post(

@@ -18,6 +18,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from app.infrastructure.alert import get_alert_service
 from app.infrastructure.tools.failure_recovery import reset_circuit_breakers
 from app.infrastructure.llm.client import LLMCallError, call_llm, get_llm_client, get_llm_settings
 
@@ -30,6 +31,7 @@ class LlmRetryTests(unittest.TestCase):
     def tearDown(self) -> None:
         get_llm_settings.cache_clear()
         get_llm_client.cache_clear()
+        get_alert_service.cache_clear()
         reset_circuit_breakers()
 
     def test_call_llm_retries_retryable_error(self) -> None:
@@ -118,3 +120,6 @@ class LlmRetryTests(unittest.TestCase):
                 call_llm("hello", trace_id="trace_test")
 
         self.assertEqual(second_error.exception.code, "llm_circuit_open")
+        alerts = get_alert_service().list_alerts(source_type="llm")
+        self.assertGreaterEqual(len(alerts), 2)
+        self.assertEqual(alerts[0]["source_type"], "llm")
