@@ -51,7 +51,7 @@
   - 统一鉴权
   - 限流与幂等
   - trace service
-  - 恢复告警记录与查询
+  - 恢复告警记录、查询与 trace 关联查询
   - 基础重试与熔断降级
   - router / debate / arbitration / critic / review 最小多角色编排
   - 数据库驱动运行时配置中心

@@ -72,12 +72,14 @@ class AlertService:
         *,
         severity: str | None = None,
         source_type: str | None = None,
+        trace_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[AlertEventRecord]:
         return self.repository.list_alerts(
             severity=severity,
             source_type=source_type,
+            trace_id=trace_id,
             limit=limit,
             offset=offset,
         )
