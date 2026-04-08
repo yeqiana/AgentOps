@@ -40,7 +40,7 @@ from app.config import (
 from app.domain.errors import ModelError
 from app.domain.models import InputAsset
 from app.infrastructure.logger import get_logger
-from app.infrastructure.tools.failure_recovery import get_circuit_breaker
+from app.infrastructure.tools.failure_recovery import emit_recovery_alert, get_circuit_breaker
 from app.infrastructure.tools.retry_policy import execute_with_retry
 
 load_dotenv()
@@ -277,6 +277,15 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
             recovery_seconds=get_llm_circuit_recovery_seconds(),
         )
         if not breaker.allow_request():
+            emit_recovery_alert(
+                trace_id=trace_id or "none",
+                source_type="llm",
+                source_name=f"{settings.provider}:{settings.model}",
+                severity="warning",
+                event_code="llm_circuit_open_fast_fail",
+                message="模型熔断已开启，本次请求进入快速失败。",
+                payload={"provider": settings.provider, "model": settings.model},
+            )
             degraded_error = LLMCallError(
                 f"模型熔断已开启，暂时拒绝调用。当前模型：`{settings.provider}` / `{settings.model}`。",
                 trace_id=trace_id,
@@ -348,6 +357,30 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
         except LLMCallError as error:
             if breaker is not None and error.details.get("retryable") == "true":
                 breaker.record_failure()
+                if breaker.opened_until > 0:
+                    emit_recovery_alert(
+                        trace_id=trace_id or "none",
+                        source_type="llm",
+                        source_name=f"{settings.provider}:{settings.model}",
+                        severity="error",
+                        event_code="llm_circuit_opened",
+                        message="模型连续失败已触发熔断。",
+                        payload={
+                            "provider": settings.provider,
+                            "model": settings.model,
+                            "failure_count": breaker.failure_count,
+                        },
+                    )
+                else:
+                    emit_recovery_alert(
+                        trace_id=trace_id or "none",
+                        source_type="llm",
+                        source_name=f"{settings.provider}:{settings.model}",
+                        severity="warning",
+                        event_code="llm_retry_exhausted",
+                        message="模型重试后仍失败。",
+                        payload={"provider": settings.provider, "model": settings.model},
+                    )
             raise
     else:
         try:
@@ -355,6 +388,30 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
         except LLMCallError as error:
             if breaker is not None and error.details.get("retryable") == "true":
                 breaker.record_failure()
+                if breaker.opened_until > 0:
+                    emit_recovery_alert(
+                        trace_id=trace_id or "none",
+                        source_type="llm",
+                        source_name=f"{settings.provider}:{settings.model}",
+                        severity="error",
+                        event_code="llm_circuit_opened",
+                        message="模型连续失败已触发熔断。",
+                        payload={
+                            "provider": settings.provider,
+                            "model": settings.model,
+                            "failure_count": breaker.failure_count,
+                        },
+                    )
+                else:
+                    emit_recovery_alert(
+                        trace_id=trace_id or "none",
+                        source_type="llm",
+                        source_name=f"{settings.provider}:{settings.model}",
+                        severity="warning",
+                        event_code="llm_request_failed",
+                        message="模型请求失败。",
+                        payload={"provider": settings.provider, "model": settings.model},
+                    )
             raise
 
     if breaker is not None:

@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.domain.models import (
+    AlertEventRecord,
     AssetRecord,
     MessageRecord,
     RuntimeConfigRecord,
@@ -38,6 +39,7 @@ from app.infrastructure.persistence.database import (
     TABLE_SYS_REQUEST_TRACE,
     TABLE_SYS_USER,
     TABLE_SYS_WORKFLOW_ROLE,
+    TABLE_SYS_ALERT_EVENT,
     get_connection,
 )
 
@@ -413,6 +415,83 @@ class SQLiteWorkflowRoleRepository:
                 (role_key,),
             ).fetchone()
             return {**dict(row), "is_enabled": bool(row["is_enabled"])}
+
+
+class SQLiteAlertEventRepository:
+    def create(self, alert: AlertEventRecord) -> None:
+        with get_connection() as connection:
+            connection.execute(
+                f"""
+                INSERT INTO {TABLE_SYS_ALERT_EVENT} (
+                    id, trace_id, source_type, source_name, severity, event_code, message, payload_json,
+                    created_by, updated_by, created_at, updated_at,
+                    ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    alert["id"],
+                    alert["trace_id"],
+                    alert["source_type"],
+                    alert["source_name"],
+                    alert["severity"],
+                    alert["event_code"],
+                    alert["message"],
+                    alert["payload_json"],
+                    alert["created_by"],
+                    alert["updated_by"],
+                    alert["created_at"],
+                    alert["updated_at"],
+                    alert["ext_data1"],
+                    alert["ext_data2"],
+                    alert["ext_data3"],
+                    alert["ext_data4"],
+                    alert["ext_data5"],
+                ),
+            )
+
+    def list_alerts(
+        self,
+        *,
+        severity: str | None = None,
+        source_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[AlertEventRecord]:
+        query = f"""
+            SELECT id, trace_id, source_type, source_name, severity, event_code, message, payload_json,
+                   created_by, updated_by, created_at, updated_at,
+                   ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+            FROM {TABLE_SYS_ALERT_EVENT}
+        """
+        clauses: list[str] = []
+        parameters: list[object] = []
+        if severity:
+            clauses.append("severity = ?")
+            parameters.append(severity)
+        if source_type:
+            clauses.append("source_type = ?")
+            parameters.append(source_type)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        parameters.extend([limit, offset])
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_by_id(self, alert_id: str) -> AlertEventRecord | None:
+        with get_connection() as connection:
+            row = connection.execute(
+                f"""
+                SELECT id, trace_id, source_type, source_name, severity, event_code, message, payload_json,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_ALERT_EVENT}
+                WHERE id = ?
+                """,
+                (alert_id,),
+            ).fetchone()
+            return dict(row) if row else None
 
 
 class SQLiteMessageRepository:

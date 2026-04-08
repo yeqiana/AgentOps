@@ -19,6 +19,8 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from app.infrastructure.alert import get_alert_service
+
 
 @dataclass
 class CircuitBreaker:
@@ -60,3 +62,41 @@ def get_circuit_breaker(key: str, *, failure_threshold: int, recovery_seconds: i
 
 def reset_circuit_breakers() -> None:
     _BREAKERS.clear()
+
+
+def emit_recovery_alert(
+    *,
+    trace_id: str,
+    source_type: str,
+    source_name: str,
+    severity: str,
+    event_code: str,
+    message: str,
+    payload: dict[str, object] | None = None,
+) -> None:
+    """
+    What this is:
+    - A tiny alert emission helper for recovery-related runtime events.
+
+    What it does:
+    - Persists recovery, retry, circuit-breaker, and fast-fail alerts.
+    - Never lets alert persistence break the main execution path.
+
+    Why this is done this way:
+    - Failure handling should improve observability, not introduce a second
+      failure path that blocks the original request.
+    """
+
+    safe_trace_id = trace_id or "none"
+    try:
+        get_alert_service().create_alert(
+            trace_id=safe_trace_id,
+            source_type=source_type,
+            source_name=source_name,
+            severity=severity,
+            event_code=event_code,
+            message=message,
+            payload=payload or {},
+        )
+    except Exception:
+        return

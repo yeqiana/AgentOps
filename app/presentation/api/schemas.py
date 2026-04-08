@@ -220,6 +220,27 @@ class TraceResponse(BaseModel):
     trace: TracePayload
 
 
+class AlertEventPayload(BaseModel):
+    id: str
+    trace_id: str
+    source_type: str
+    source_name: str
+    severity: str
+    event_code: str
+    message: str
+    payload_json: str
+    created_at: str
+    updated_at: str
+
+
+class AlertEventResponse(BaseModel):
+    alert: AlertEventPayload
+
+
+class AlertEventListResponse(BaseModel):
+    alerts: list[AlertEventPayload]
+
+
 class WorkflowRolePayload(BaseModel):
     role_key: str = ""
     name: str

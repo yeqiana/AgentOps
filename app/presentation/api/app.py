@@ -17,6 +17,7 @@ Why this is done this way:
 """
 
 from app.application.agent_service import create_initial_state, parse_input_assets
+from app.application.services.alert_service import AlertService
 from app.application.services.config_service import RuntimeConfigService
 from app.application.services.session_service import SessionService
 from app.application.services.task_service import TaskService
@@ -37,6 +38,9 @@ from app.presentation.api.middleware.trace import TraceMiddleware
 from app.presentation.api.schemas import (
     AnalyzeAssetRequest,
     AnalyzeAssetResponse,
+    AlertEventListResponse,
+    AlertEventPayload,
+    AlertEventResponse,
     AssetListResponse,
     AssetPayload,
     AssetResponse,
@@ -86,6 +90,7 @@ def create_app():
         ) from error
 
     session_service = SessionService()
+    alert_service = AlertService()
     config_service = RuntimeConfigService()
     workflow_role_service = WorkflowRoleService()
     tool_registry = build_default_tool_registry(config_service)
@@ -456,6 +461,57 @@ def create_app():
         if not trace:
             raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
         return TraceResponse(trace=TracePayload(**trace))
+
+    @app.get("/alerts", response_model=AlertEventListResponse)
+    def list_alerts(
+        severity: str | None = None,
+        source_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> AlertEventListResponse:
+        alerts = alert_service.list_alerts(
+            severity=sanitize_text(severity or "") or None,
+            source_type=sanitize_text(source_type or "") or None,
+            limit=max(1, min(limit, 100)),
+            offset=max(0, offset),
+        )
+        return AlertEventListResponse(
+            alerts=[
+                AlertEventPayload(
+                    id=item["id"],
+                    trace_id=item["trace_id"],
+                    source_type=item["source_type"],
+                    source_name=item["source_name"],
+                    severity=item["severity"],
+                    event_code=item["event_code"],
+                    message=item["message"],
+                    payload_json=item["payload_json"],
+                    created_at=item["created_at"],
+                    updated_at=item["updated_at"],
+                )
+                for item in alerts
+            ]
+        )
+
+    @app.get("/alerts/{alert_id}", response_model=AlertEventResponse, responses={404: {"model": ErrorResponse}})
+    def get_alert(alert_id: str) -> AlertEventResponse:
+        alert = alert_service.get_alert(sanitize_text(alert_id))
+        if not alert:
+            raise HTTPException(status_code=404, detail=ValidationError("告警不存在。").to_dict())
+        return AlertEventResponse(
+            alert=AlertEventPayload(
+                id=alert["id"],
+                trace_id=alert["trace_id"],
+                source_type=alert["source_type"],
+                source_name=alert["source_name"],
+                severity=alert["severity"],
+                event_code=alert["event_code"],
+                message=alert["message"],
+                payload_json=alert["payload_json"],
+                created_at=alert["created_at"],
+                updated_at=alert["updated_at"],
+            )
+        )
 
     @app.post("/assets/analyze", response_model=AnalyzeAssetResponse, responses={400: {"model": ErrorResponse}})
     def analyze_asset(payload: AnalyzeAssetRequest, request: Request) -> AnalyzeAssetResponse:

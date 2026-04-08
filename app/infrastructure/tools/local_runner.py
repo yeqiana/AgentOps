@@ -25,7 +25,7 @@ from app.config import (
 )
 from app.domain.errors import ToolError
 from app.domain.models import ToolExecutionResult
-from app.infrastructure.tools.failure_recovery import get_circuit_breaker
+from app.infrastructure.tools.failure_recovery import emit_recovery_alert, get_circuit_breaker
 from app.infrastructure.tools.retry_policy import execute_with_retry
 
 
@@ -57,6 +57,15 @@ class LocalToolRunner:
                 recovery_seconds=get_tool_circuit_recovery_seconds(),
             )
             if not breaker.allow_request():
+                emit_recovery_alert(
+                    trace_id=trace_id,
+                    source_type="tool",
+                    source_name=command[0],
+                    severity="warning",
+                    event_code="tool_circuit_open_fast_fail",
+                    message="本地工具熔断已开启，本次调用进入快速失败。",
+                    payload={"command": " ".join(command)},
+                )
                 raise ToolError(
                     "本地工具熔断已开启，请稍后再试。",
                     trace_id=trace_id,
@@ -105,6 +114,26 @@ class LocalToolRunner:
         except ToolError:
             if breaker is not None:
                 breaker.record_failure()
+                if breaker.opened_until > 0:
+                    emit_recovery_alert(
+                        trace_id=trace_id,
+                        source_type="tool",
+                        source_name=command[0],
+                        severity="error",
+                        event_code="tool_circuit_opened",
+                        message="本地工具连续失败已触发熔断。",
+                        payload={"command": " ".join(command), "failure_count": breaker.failure_count},
+                    )
+                else:
+                    emit_recovery_alert(
+                        trace_id=trace_id,
+                        source_type="tool",
+                        source_name=command[0],
+                        severity="warning",
+                        event_code="tool_retry_exhausted" if is_tool_retry_enabled() else "tool_request_failed",
+                        message="本地工具重试后仍失败。" if is_tool_retry_enabled() else "本地工具请求失败。",
+                        payload={"command": " ".join(command)},
+                    )
             raise
 
         if breaker is not None:

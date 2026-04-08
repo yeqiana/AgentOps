@@ -371,6 +371,40 @@ class WorkflowRoleRecord(TypedDict):
     ext_data5: str
 
 
+class AlertEventRecord(TypedDict):
+    """
+    告警事件持久化记录。
+
+    What this is:
+    - 数据库中的系统级告警事件行结构。
+
+    What it does:
+    - 保存告警来源、严重级别、事件编码、关联 trace 和扩展载荷。
+
+    Why this is done this way:
+    - 阶段 2 的失败恢复不应只停留在“重试和熔断”，还需要把关键异常
+      和降级事件沉淀为可查询的治理数据。
+    """
+
+    id: str
+    trace_id: str
+    source_type: str
+    source_name: str
+    severity: str
+    event_code: str
+    message: str
+    payload_json: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
 class AgentState(TypedDict):
     """
     Agent 共享状态。

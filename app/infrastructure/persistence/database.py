@@ -29,13 +29,14 @@ from app.domain.errors import PersistenceError
 
 
 DEFAULT_DATABASE_URL = "sqlite:///data/agent.db"
-SCHEMA_VERSION = "2026_04_08_03"
+SCHEMA_VERSION = "2026_04_08_04"
 
 TABLE_SYS_SCHEMA_VERSION = "sys_schema_version"
 TABLE_SYS_USER = "sys_user"
 TABLE_SYS_REQUEST_TRACE = "sys_request_trace"
 TABLE_SYS_RUNTIME_CONFIG = "sys_runtime_config"
 TABLE_SYS_WORKFLOW_ROLE = "sys_workflow_role"
+TABLE_SYS_ALERT_EVENT = "sys_alert_event"
 
 TABLE_BIZ_SESSION = "biz_session"
 TABLE_BIZ_MESSAGE = "biz_message"
@@ -94,6 +95,19 @@ SCHEMA_STATEMENTS = (
         sort_order INTEGER NOT NULL,
         role_type TEXT NOT NULL,
         description TEXT NOT NULL,
+{AUDIT_FIELD_SQL}
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_SYS_ALERT_EVENT} (
+        id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_name TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        event_code TEXT NOT NULL,
+        message TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
 {AUDIT_FIELD_SQL}
     )
     """,
@@ -196,6 +210,9 @@ INDEX_STATEMENTS = (
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_RUNTIME_CONFIG}_scope_key ON {TABLE_SYS_RUNTIME_CONFIG}(config_scope, config_key)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_RUNTIME_CONFIG}_updated_at ON {TABLE_SYS_RUNTIME_CONFIG}(updated_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_WORKFLOW_ROLE}_enabled_order ON {TABLE_SYS_WORKFLOW_ROLE}(is_enabled, sort_order ASC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ALERT_EVENT}_severity_created ON {TABLE_SYS_ALERT_EVENT}(severity, created_at DESC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ALERT_EVENT}_trace_created ON {TABLE_SYS_ALERT_EVENT}(trace_id, created_at DESC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ALERT_EVENT}_source_created ON {TABLE_SYS_ALERT_EVENT}(source_type, source_name, created_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_SESSION}_updated_at ON {TABLE_BIZ_SESSION}(updated_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_SESSION}_user_id ON {TABLE_BIZ_SESSION}(user_id, updated_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_MESSAGE}_session_turn ON {TABLE_BIZ_MESSAGE}(session_id, created_at ASC)",
@@ -266,6 +283,17 @@ AUDIT_COLUMN_MIGRATIONS = {
         ("ext_data3", f"ALTER TABLE {TABLE_SYS_WORKFLOW_ROLE} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
         ("ext_data4", f"ALTER TABLE {TABLE_SYS_WORKFLOW_ROLE} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
         ("ext_data5", f"ALTER TABLE {TABLE_SYS_WORKFLOW_ROLE} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
+    ),
+    TABLE_SYS_ALERT_EVENT: (
+        ("created_by", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("updated_by", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("created_at", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+        ("updated_at", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+        ("ext_data1", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data2", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data3", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data4", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data5", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
     ),
     TABLE_BIZ_SESSION: (
         ("created_by", f"ALTER TABLE {TABLE_BIZ_SESSION} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
@@ -598,7 +626,7 @@ def _upsert_schema_version(connection: sqlite3.Connection) -> None:
         """,
         (
             SCHEMA_VERSION,
-            "Introduce sys_workflow_role for database-backed role registry.",
+            "Introduce sys_alert_event for recovery and degradation alert records.",
         ),
     )
 
