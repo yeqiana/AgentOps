@@ -15,8 +15,18 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from app.config import (
+    get_tool_circuit_failure_threshold,
+    get_tool_circuit_recovery_seconds,
+    get_tool_retry_attempts,
+    get_tool_retry_backoff_ms,
+    is_tool_circuit_enabled,
+    is_tool_retry_enabled,
+)
 from app.domain.errors import ToolError
 from app.domain.models import ToolExecutionResult
+from app.infrastructure.tools.failure_recovery import get_circuit_breaker
+from app.infrastructure.tools.retry_policy import execute_with_retry
 
 
 class LocalToolRunner:
@@ -39,28 +49,66 @@ class LocalToolRunner:
         cwd: str | None = None,
         input_text: str | None = None,
     ) -> ToolExecutionResult:
-        try:
-            completed = subprocess.run(
-                command,
-                input=input_text,
-                text=True,
-                capture_output=True,
-                timeout=timeout_seconds,
-                cwd=Path(cwd) if cwd else None,
-                check=False,
+        breaker = None
+        if is_tool_circuit_enabled():
+            breaker = get_circuit_breaker(
+                f"tool:{command[0]}",
+                failure_threshold=get_tool_circuit_failure_threshold(),
+                recovery_seconds=get_tool_circuit_recovery_seconds(),
             )
-        except subprocess.TimeoutExpired as error:
-            raise ToolError(
-                "本地工具执行超时。",
-                trace_id=trace_id,
-                details={"command": " ".join(command), "timeout_seconds": str(timeout_seconds)},
-            ) from error
-        except OSError as error:
-            raise ToolError(
-                "本地工具执行失败。",
-                trace_id=trace_id,
-                details={"command": " ".join(command), "reason": str(error)},
-            ) from error
+            if not breaker.allow_request():
+                raise ToolError(
+                    "本地工具熔断已开启，请稍后再试。",
+                    trace_id=trace_id,
+                    details={"command": " ".join(command), "degrade_mode": "fast_fail"},
+                )
+
+        def _invoke() -> subprocess.CompletedProcess[str]:
+            try:
+                return subprocess.run(
+                    command,
+                    input=input_text,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout_seconds,
+                    cwd=Path(cwd) if cwd else None,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise ToolError(
+                    "本地工具执行超时。",
+                    trace_id=trace_id,
+                    details={"command": " ".join(command), "timeout_seconds": str(timeout_seconds)},
+                ) from error
+            except OSError as error:
+                raise ToolError(
+                    "本地工具执行失败。",
+                    trace_id=trace_id,
+                    details={"command": " ".join(command), "reason": str(error)},
+                ) from error
+
+        def _should_retry(error: Exception) -> bool:
+            if not isinstance(error, ToolError):
+                return False
+            return error.message in {"本地工具执行超时。", "本地工具执行失败。"}
+
+        try:
+            if is_tool_retry_enabled():
+                completed = execute_with_retry(
+                    _invoke,
+                    attempts=get_tool_retry_attempts(),
+                    backoff_ms=get_tool_retry_backoff_ms(),
+                    should_retry=_should_retry,
+                )
+            else:
+                completed = _invoke()
+        except ToolError:
+            if breaker is not None:
+                breaker.record_failure()
+            raise
+
+        if breaker is not None:
+            breaker.record_success()
 
         return {
             "tool_name": command[0],

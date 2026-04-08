@@ -59,12 +59,25 @@ class ApiHttpTests(unittest.TestCase):
         self.upload_path = upload_path
 
     def tearDown(self) -> None:
+        for name in [
+            "APP_AUTH_ENABLED",
+            "APP_API_KEYS",
+            "APP_BEARER_TOKENS",
+            "APP_RATE_LIMIT_ENABLED",
+            "APP_RATE_LIMIT_REQUESTS",
+            "APP_RATE_LIMIT_WINDOW_SECONDS",
+            "APP_IDEMPOTENCY_ENABLED",
+            "APP_IDEMPOTENCY_TTL_SECONDS",
+        ]:
+            os.environ.pop(name, None)
         self.temp_dir.cleanup()
 
     def test_health_endpoint(self) -> None:
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+        self.assertTrue(response.headers["X-Trace-Id"])
+        self.assertTrue(response.headers["X-Request-Id"])
 
     def test_tools_endpoints(self) -> None:
         list_response = self.client.get("/tools")
@@ -83,6 +96,162 @@ class ApiHttpTests(unittest.TestCase):
         self.assertTrue(execute_payload["result"]["success"])
         self.assertEqual(execute_payload["result"]["stdout"], "hello tool")
 
+    def test_workflow_config_endpoint(self) -> None:
+        response = self.client.get("/workflow/config")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["workflow"]
+        self.assertIn("deliberation_enabled", payload)
+        self.assertIn("deliberation_keywords", payload)
+        self.assertIn("support_role", payload)
+        self.assertIn("challenge_role", payload)
+        self.assertIn("arbitration_role", payload)
+        self.assertIn("critic_role", payload)
+        self.assertTrue(payload["support_role"]["name"])
+
+    def test_workflow_role_endpoints_can_query_and_update_role(self) -> None:
+        list_response = self.client.get("/workflow/roles")
+        self.assertEqual(list_response.status_code, 200)
+        roles = list_response.json()["roles"]
+        self.assertGreaterEqual(len(roles), 4)
+
+        put_response = self.client.put(
+            "/workflow/roles/critic",
+            json={
+                "name": "数据库批评代理",
+                "stance_instruction": "优先指出答案中最关键的问题。",
+                "is_enabled": True,
+                "sort_order": 35,
+                "role_type": "review",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(put_response.status_code, 200)
+        payload = put_response.json()["role"]
+        self.assertEqual(payload["role_key"], "critic")
+        self.assertEqual(payload["name"], "数据库批评代理")
+
+        workflow_response = self.client.get("/workflow/config")
+        self.assertEqual(workflow_response.status_code, 200)
+        workflow_payload = workflow_response.json()["workflow"]
+        self.assertEqual(workflow_payload["critic_role"]["name"], "数据库批评代理")
+
+    def test_security_config_endpoint(self) -> None:
+        os.environ["APP_ALLOWED_TOOLS"] = "python_echo"
+        os.environ["APP_UPLOAD_ALLOWED_KINDS"] = "image,file"
+        os.environ["APP_UPLOAD_MAX_BYTES"] = "1024"
+        os.environ["APP_AUTH_ENABLED"] = "true"
+        os.environ["APP_API_KEYS"] = "demo-key"
+        os.environ["APP_RATE_LIMIT_ENABLED"] = "true"
+        os.environ["APP_IDEMPOTENCY_ENABLED"] = "true"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        response = client.get("/security/config", headers={"X-API-Key": "demo-key"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["security"]
+        self.assertEqual(payload["allowed_tools"], ["python_echo"])
+        self.assertEqual(payload["upload_allowed_kinds"], ["image", "file"])
+        self.assertEqual(payload["upload_max_bytes"], 1024)
+        self.assertTrue(payload["auth_enabled"])
+        self.assertTrue(payload["rate_limit_enabled"])
+        self.assertTrue(payload["idempotency_enabled"])
+        for name in [
+            "APP_ALLOWED_TOOLS",
+            "APP_UPLOAD_ALLOWED_KINDS",
+            "APP_UPLOAD_MAX_BYTES",
+            "APP_AUTH_ENABLED",
+            "APP_API_KEYS",
+            "APP_RATE_LIMIT_ENABLED",
+            "APP_IDEMPOTENCY_ENABLED",
+        ]:
+            os.environ.pop(name, None)
+
+    def test_runtime_config_endpoints_persist_and_affect_workflow(self) -> None:
+        put_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "workflow",
+                "config_key": "support_role_name",
+                "config_value": "数据库支持代理",
+                "value_type": "str",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(put_response.status_code, 200)
+        put_payload = put_response.json()["config"]
+        self.assertEqual(put_payload["config_scope"], "workflow")
+        self.assertEqual(put_payload["config_key"], "support_role_name")
+
+        list_response = self.client.get("/config/runtime?scope=workflow")
+        self.assertEqual(list_response.status_code, 200)
+        list_payload = list_response.json()["configs"]
+        self.assertEqual(len(list_payload), 1)
+        self.assertEqual(list_payload[0]["config_value"], "数据库支持代理")
+
+        workflow_response = self.client.get("/workflow/config")
+        self.assertEqual(workflow_response.status_code, 200)
+        workflow_payload = workflow_response.json()["workflow"]
+        self.assertEqual(workflow_payload["support_role"]["name"], "数据库支持代理")
+
+        critic_put_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "workflow",
+                "config_key": "critic_role_name",
+                "config_value": "数据库批评代理",
+                "value_type": "str",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(critic_put_response.status_code, 200)
+
+        workflow_response = self.client.get("/workflow/config")
+        self.assertEqual(workflow_response.status_code, 200)
+        workflow_payload = workflow_response.json()["workflow"]
+        self.assertEqual(workflow_payload["critic_role"]["name"], "数据库批评代理")
+
+    def test_runtime_config_endpoints_affect_security_snapshot(self) -> None:
+        put_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "security",
+                "config_key": "upload_max_bytes",
+                "config_value": "2048",
+                "value_type": "int",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(put_response.status_code, 200)
+
+        security_response = self.client.get("/security/config")
+        self.assertEqual(security_response.status_code, 200)
+        security_payload = security_response.json()["security"]
+        self.assertEqual(security_payload["upload_max_bytes"], 2048)
+
+    def test_trace_endpoint_returns_request_trace(self) -> None:
+        response = self.client.post(
+            "/chat",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "trace-user",
+                "session_title": "Trace Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        trace_response = self.client.get(f"/traces/{payload['trace_id']}")
+        self.assertEqual(trace_response.status_code, 200)
+        trace_payload = trace_response.json()["trace"]
+        self.assertEqual(trace_payload["trace_id"], payload["trace_id"])
+        self.assertEqual(trace_payload["task_id"], payload["task_id"])
+        self.assertEqual(trace_payload["session_id"], payload["session_id"])
+        self.assertEqual(trace_payload["status_code"], 200)
+
     def test_chat_sessions_and_task_endpoints(self) -> None:
         chat_response = self.client.post(
             "/chat",
@@ -97,6 +266,11 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIn("session_id", payload)
         self.assertIn("task_id", payload)
         self.assertIn("trace_id", payload)
+        self.assertIn("route_name", payload)
+        self.assertIn("debate_summary", payload)
+        self.assertIn("arbitration_summary", payload)
+        self.assertIn("critic_summary", payload)
+        self.assertIn("review_status", payload)
         self.assertIn("tool_names", payload)
 
         sessions_response = self.client.get("/sessions")
@@ -128,6 +302,11 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(task_payload["task"]["id"], payload["task_id"])
         self.assertEqual(task_payload["task"]["session_id"], payload["session_id"])
         self.assertEqual(task_payload["task"]["status"], "completed")
+        self.assertEqual(task_payload["task"]["route_name"], payload["route_name"])
+        self.assertEqual(task_payload["task"]["debate_summary"], payload["debate_summary"])
+        self.assertEqual(task_payload["task"]["arbitration_summary"], payload["arbitration_summary"])
+        self.assertEqual(task_payload["task"]["critic_summary"], payload["critic_summary"])
+        self.assertEqual(task_payload["task"]["review_status"], payload["review_status"])
         self.assertIn("tool_results", task_payload)
         self.assertIsInstance(task_payload["tool_results"], list)
 
@@ -302,3 +481,83 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(payload["tool_results"][0]["tool_name"], "ocr_tesseract")
         self.assertIn(str(self.upload_path), payload["saved_path"])
         self.assertIn(payload["saved_path"], payload["tool_results"][0]["stdout"])
+
+    def test_upload_asset_rejects_disallowed_kind(self) -> None:
+        os.environ["APP_UPLOAD_ALLOWED_KINDS"] = "image"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        response = client.post(
+            "/assets/upload",
+            files={"file": ("note.txt", b"hello upload", "text/plain")},
+            data={"kind": "file"},
+        )
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["code"], "validation_error")
+        self.assertEqual(payload["message"], "上传文件类型不在允许范围内。")
+        os.environ.pop("APP_UPLOAD_ALLOWED_KINDS", None)
+
+    def test_auth_middleware_rejects_missing_credentials(self) -> None:
+        os.environ["APP_AUTH_ENABLED"] = "true"
+        os.environ["APP_API_KEYS"] = "demo-key"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        response = client.get("/tools")
+        self.assertEqual(response.status_code, 401)
+        payload = response.json()
+        self.assertEqual(payload["category"], "auth")
+        self.assertEqual(payload["code"], "authentication_error")
+        os.environ.pop("APP_AUTH_ENABLED", None)
+        os.environ.pop("APP_API_KEYS", None)
+
+    def test_auth_middleware_accepts_api_key(self) -> None:
+        os.environ["APP_AUTH_ENABLED"] = "true"
+        os.environ["APP_API_KEYS"] = "demo-key"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        response = client.get("/tools", headers={"X-API-Key": "demo-key"})
+        self.assertEqual(response.status_code, 200)
+        trace_id = response.headers["X-Trace-Id"]
+        trace_response = client.get(f"/traces/{trace_id}", headers={"X-API-Key": "demo-key"})
+        self.assertEqual(trace_response.status_code, 200)
+        self.assertEqual(trace_response.json()["trace"]["auth_type"], "api_key")
+        os.environ.pop("APP_AUTH_ENABLED", None)
+        os.environ.pop("APP_API_KEYS", None)
+
+    def test_rate_limit_returns_structured_429(self) -> None:
+        os.environ["APP_RATE_LIMIT_ENABLED"] = "true"
+        os.environ["APP_RATE_LIMIT_REQUESTS"] = "1"
+        os.environ["APP_RATE_LIMIT_WINDOW_SECONDS"] = "60"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        first = client.get("/tools")
+        second = client.get("/tools")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        payload = second.json()
+        self.assertEqual(payload["category"], "rate_limit")
+        self.assertEqual(payload["code"], "rate_limit_error")
+        os.environ.pop("APP_RATE_LIMIT_ENABLED", None)
+        os.environ.pop("APP_RATE_LIMIT_REQUESTS", None)
+        os.environ.pop("APP_RATE_LIMIT_WINDOW_SECONDS", None)
+
+    def test_idempotency_replays_post_response(self) -> None:
+        os.environ["APP_IDEMPOTENCY_ENABLED"] = "true"
+        os.environ["APP_IDEMPOTENCY_TTL_SECONDS"] = "300"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        headers = {"Idempotency-Key": "same-request-key"}
+        first = client.post("/tools/python_echo/execute", headers=headers, json={"parameters": {"message": "hello"}})
+        second = client.post("/tools/python_echo/execute", headers=headers, json={"parameters": {"message": "hello"}})
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.json(), second.json())
+        self.assertEqual(first.headers["X-Idempotent-Replay"], "false")
+        self.assertEqual(second.headers["X-Idempotent-Replay"], "true")
+        os.environ.pop("APP_IDEMPOTENCY_ENABLED", None)
+        os.environ.pop("APP_IDEMPOTENCY_TTL_SECONDS", None)

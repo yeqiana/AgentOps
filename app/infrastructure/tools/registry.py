@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from app.application.services.config_service import RuntimeConfigService
 from app.domain.errors import ToolError
 from app.domain.models import ToolExecutionResult
 from app.infrastructure.logger import get_logger
@@ -69,9 +70,19 @@ class ToolRegistry:
         return {**result, "tool_name": name}
 
 
-def build_default_tool_registry() -> ToolRegistry:
+def build_default_tool_registry(
+    config_service: RuntimeConfigService | None = None,
+) -> ToolRegistry:
     runner = LocalToolRunner()
     registry = ToolRegistry()
+    effective_security_config = (config_service or RuntimeConfigService()).get_effective_security_config()
+    allowed_tools = effective_security_config["allowed_tools"]
+
+    def register_if_allowed(name: str, description: str, handler: ToolHandler) -> None:
+        if allowed_tools and name not in allowed_tools:
+            logger.info("工具 `%s` 不在白名单中，跳过注册。allowed_tools=%s", name, allowed_tools)
+            return
+        registry.register(name=name, description=description, handler=handler)
 
     def run_python_echo(trace_id: str, parameters: dict[str, str]) -> ToolExecutionResult:
         message = parameters.get("message", "")
@@ -81,7 +92,7 @@ def build_default_tool_registry() -> ToolRegistry:
             input_text=message,
         )
 
-    registry.register(
+    register_if_allowed(
         name="python_echo",
         description="使用本地 Python 读取一段输入并原样输出，用于验证工具网关链路。",
         handler=run_python_echo,
@@ -89,7 +100,7 @@ def build_default_tool_registry() -> ToolRegistry:
 
     ocr_definition = build_ocr_definition()
     if ocr_definition.is_available and ocr_definition.command:
-        registry.register(
+        register_if_allowed(
             name=ocr_definition.name,
             description=ocr_definition.description,
             handler=lambda trace_id, parameters, command=ocr_definition.command: run_ocr_tool(
@@ -104,7 +115,7 @@ def build_default_tool_registry() -> ToolRegistry:
 
     asr_definition = build_asr_definition()
     if asr_definition.is_available and asr_definition.command:
-        registry.register(
+        register_if_allowed(
             name=asr_definition.name,
             description=asr_definition.description,
             handler=lambda trace_id, parameters, command=asr_definition.command: run_asr_tool(
@@ -119,7 +130,7 @@ def build_default_tool_registry() -> ToolRegistry:
 
     video_probe_definition = build_video_probe_definition()
     if video_probe_definition.is_available and video_probe_definition.command:
-        registry.register(
+        register_if_allowed(
             name=video_probe_definition.name,
             description=video_probe_definition.description,
             handler=lambda trace_id, parameters, command=video_probe_definition.command: run_video_probe_tool(
@@ -134,7 +145,7 @@ def build_default_tool_registry() -> ToolRegistry:
 
     video_frame_definition = build_video_frame_definition()
     if video_frame_definition.is_available and video_frame_definition.command:
-        registry.register(
+        register_if_allowed(
             name=video_frame_definition.name,
             description=video_frame_definition.description,
             handler=lambda trace_id, parameters, command=video_frame_definition.command: run_video_frame_tool(
@@ -149,7 +160,7 @@ def build_default_tool_registry() -> ToolRegistry:
 
     video_audio_definition = build_video_audio_definition()
     if video_audio_definition.is_available and video_audio_definition.command:
-        registry.register(
+        register_if_allowed(
             name=video_audio_definition.name,
             description=video_audio_definition.description,
             handler=lambda trace_id, parameters, command=video_audio_definition.command: run_video_audio_tool(

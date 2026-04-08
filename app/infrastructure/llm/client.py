@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -28,9 +29,19 @@ from openai import (
     RateLimitError,
 )
 
+from app.config import (
+    get_llm_circuit_failure_threshold,
+    get_llm_circuit_recovery_seconds,
+    get_llm_retry_attempts,
+    get_llm_retry_backoff_ms,
+    is_llm_circuit_enabled,
+    is_llm_retry_enabled,
+)
 from app.domain.errors import ModelError
 from app.domain.models import InputAsset
 from app.infrastructure.logger import get_logger
+from app.infrastructure.tools.failure_recovery import get_circuit_breaker
+from app.infrastructure.tools.retry_policy import execute_with_retry
 
 load_dotenv()
 
@@ -242,6 +253,14 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
 
     if settings.provider == "mock":
         has_image_assets = any(asset["kind"] == "image" for asset in (input_assets or []))
+        if "仲裁阶段" in cleaned_prompt:
+            return "仲裁代理结论：建议保留双方共同认可的关键点，并在最终答案中补充风险与限制说明。"
+        if "辩论阶段" in cleaned_prompt:
+            if any(keyword in cleaned_prompt for keyword in {"支持方", "强项", "保留", "有效路径"}):
+                return "支持方代理观点：当前规划覆盖了主要任务目标，最终答案应优先给出直接结论和关键依据。"
+            return "质疑方代理观点：当前规划仍需强调限制条件、失败风险或潜在遗漏，避免结论过度乐观。"
+        if "批评阶段" in cleaned_prompt:
+            return "批评代理意见：当前结果基本完整，但如果涉及工具失败或明显限制，需要在答案中明确说明。"
         if "规划阶段" in cleaned_prompt:
             if has_image_assets:
                 return "这是一个本地 mock 规划结果：先读取图片输入，再结合上下文给出分析。"
@@ -250,44 +269,96 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
             return "这是一个本地 mock 最终答案，用于验证真实图片入口和多模态消息拼装是否正常。"
         return "这是一个本地 mock 最终答案，用于验证 Agent 底座流程是否正常。"
 
+    breaker = None
+    if settings.provider != "mock" and is_llm_circuit_enabled():
+        breaker = get_circuit_breaker(
+            f"llm:{settings.provider}:{settings.model}",
+            failure_threshold=get_llm_circuit_failure_threshold(),
+            recovery_seconds=get_llm_circuit_recovery_seconds(),
+        )
+        if not breaker.allow_request():
+            degraded_error = LLMCallError(
+                f"模型熔断已开启，暂时拒绝调用。当前模型：`{settings.provider}` / `{settings.model}`。",
+                trace_id=trace_id,
+                details={"retryable": "false", "degraded": "true", "degrade_mode": "fast_fail"},
+            )
+            degraded_error.code = "llm_circuit_open"
+            raise degraded_error
+
     client = get_llm_client()
 
-    try:
-        response = client.chat.completions.create(
-            model=settings.model,
-            messages=[{"role": "user", "content": message_content}],
-        )
-    except RateLimitError as error:
-        raise LLMCallError(
-            _build_error_message("模型调用触发 429，通常表示额度不足、未开通计费或限流。", settings.provider, settings.model, error),
-            trace_id=trace_id,
-        ) from error
-    except AuthenticationError as error:
-        raise LLMCallError(
-            _build_error_message("模型认证失败。请检查 API Key、Base URL 和模型配置。", settings.provider, settings.model, error),
-            trace_id=trace_id,
-        ) from error
-    except BadRequestError as error:
-        raise LLMCallError(
-            _build_error_message("模型请求参数错误。请检查模型名、输入内容和多模态请求格式。", settings.provider, settings.model, error),
-            trace_id=trace_id,
-        ) from error
-    except APIConnectionError as error:
-        raise LLMCallError(
-            _build_error_message("模型网络连接失败。请检查当前网络和代理配置。", settings.provider, settings.model, error),
-            trace_id=trace_id,
-        ) from error
-    except APIStatusError as error:
-        raise LLMCallError(
-            _build_error_message(f"模型服务返回 HTTP {error.status_code}。", settings.provider, settings.model, error),
-            trace_id=trace_id,
-        ) from error
-    except Exception as error:
-        logger.exception("模型调用发生未预期异常")
-        raise LLMCallError(
-            _build_error_message("模型调用发生未预期异常。", settings.provider, settings.model, error),
-            trace_id=trace_id,
-        ) from error
+    def _invoke():
+        try:
+            return client.chat.completions.create(
+                model=settings.model,
+                messages=[{"role": "user", "content": message_content}],
+            )
+        except RateLimitError as error:
+            raise LLMCallError(
+                _build_error_message("模型调用触发 429，通常表示额度不足、未开通计费或限流。", settings.provider, settings.model, error),
+                trace_id=trace_id,
+                details={"retryable": "true"},
+            ) from error
+        except AuthenticationError as error:
+            raise LLMCallError(
+                _build_error_message("模型认证失败。请检查 API Key、Base URL 和模型配置。", settings.provider, settings.model, error),
+                trace_id=trace_id,
+                details={"retryable": "false"},
+            ) from error
+        except BadRequestError as error:
+            raise LLMCallError(
+                _build_error_message("模型请求参数错误。请检查模型名、输入内容和多模态请求格式。", settings.provider, settings.model, error),
+                trace_id=trace_id,
+                details={"retryable": "false"},
+            ) from error
+        except APIConnectionError as error:
+            raise LLMCallError(
+                _build_error_message("模型网络连接失败。请检查当前网络和代理配置。", settings.provider, settings.model, error),
+                trace_id=trace_id,
+                details={"retryable": "true"},
+            ) from error
+        except APIStatusError as error:
+            retryable = error.status_code >= 500
+            raise LLMCallError(
+                _build_error_message(f"模型服务返回 HTTP {error.status_code}。", settings.provider, settings.model, error),
+                trace_id=trace_id,
+                details={"retryable": "true" if retryable else "false"},
+            ) from error
+        except LLMCallError:
+            raise
+        except Exception as error:
+            logger.exception("模型调用发生未预期异常")
+            raise LLMCallError(
+                _build_error_message("模型调用发生未预期异常。", settings.provider, settings.model, error),
+                trace_id=trace_id,
+                details={"retryable": "false"},
+            ) from error
+
+    def _should_retry(error: Exception) -> bool:
+        return isinstance(error, LLMCallError) and error.details.get("retryable") == "true"
+
+    if is_llm_retry_enabled():
+        try:
+            response = execute_with_retry(
+                _invoke,
+                attempts=get_llm_retry_attempts(),
+                backoff_ms=get_llm_retry_backoff_ms(),
+                should_retry=_should_retry,
+            )
+        except LLMCallError as error:
+            if breaker is not None and error.details.get("retryable") == "true":
+                breaker.record_failure()
+            raise
+    else:
+        try:
+            response = _invoke()
+        except LLMCallError as error:
+            if breaker is not None and error.details.get("retryable") == "true":
+                breaker.record_failure()
+            raise
+
+    if breaker is not None:
+        breaker.record_success()
 
     content = sanitize_text(response.choices[0].message.content or "")
     logger.info("模型调用成功 trace_id=%s", trace_id or "none")

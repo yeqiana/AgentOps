@@ -19,13 +19,21 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.application.image_service import create_image_asset_from_reference
-from app.application.prompt_builder import build_answer_prompt, build_plan_prompt
+from app.application.prompt_builder import (
+    build_answer_prompt,
+    build_arbitration_prompt,
+    build_critic_prompt,
+    build_debate_prompt,
+    build_plan_prompt,
+)
 from app.config import ensure_upload_download_dir
 from app.domain.errors import ToolError
 from app.domain.models import AgentState, InputAsset, Message, ToolExecutionResult
 from app.infrastructure.llm.client import call_llm, sanitize_text
 from app.infrastructure.logger import get_logger
 from app.infrastructure.tools.registry import build_default_tool_registry
+from app.workflow.policies import decide_route, review_answer
+from app.workflow.registry import build_workflow_policy_registry
 
 
 logger = get_logger("workflow.nodes")
@@ -299,6 +307,34 @@ def tool_node(state: AgentState) -> AgentState:
     }
 
 
+def router_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The stage-2 routing node.
+
+    What it does:
+    - Produces a stable route decision before planning.
+
+    Why this is done this way:
+    - Routing should become explicit and queryable before the workflow grows
+      into multi-graph or multi-agent orchestration.
+    """
+
+    route_name, route_reason = decide_route(
+        user_input=state["user_input"],
+        input_assets=state["input_assets"],
+        tool_results=state["tool_results"],
+        message_count=len(state["messages"]),
+        registry=build_workflow_policy_registry(),
+    )
+    logger.info("router_node 执行完成 trace_id=%s route=%s", state["trace_id"], route_name)
+    return {
+        **state,
+        "route_name": route_name,
+        "route_reason": route_reason,
+    }
+
+
 def plan_node(state: AgentState) -> AgentState:
     """
     What this is:
@@ -327,6 +363,85 @@ def plan_node(state: AgentState) -> AgentState:
         **state,
         "user_input": sanitize_text(state["user_input"]),
         "plan": plan,
+    }
+
+
+def debate_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The stage-2 multi-agent debate node.
+
+    What it does:
+    - Runs two explicit roles over the same task: a supporting perspective and
+      a challenging perspective.
+
+    Why this is done this way:
+    - Multi-agent orchestration should begin with controlled role separation so
+      the runtime can compare perspectives before answering.
+    """
+
+    if state["route_name"] != "deliberation_chat":
+        return {
+            **state,
+            "debate_summary": "当前路由未启用多 Agent 辩论。",
+        }
+
+    registry = build_workflow_policy_registry()
+    support_prompt = build_debate_prompt(
+        state,
+        role_name=registry.support_role.name,
+        stance_instruction=registry.support_role.stance_instruction,
+    )
+    challenge_prompt = build_debate_prompt(
+        state,
+        role_name=registry.challenge_role.name,
+        stance_instruction=registry.challenge_role.stance_instruction,
+    )
+    logger.info("进入 debate_node trace_id=%s route=%s", state["trace_id"], state["route_name"])
+    support_summary = call_llm(support_prompt, input_assets=state["input_assets"], trace_id=state["trace_id"])
+    challenge_summary = call_llm(challenge_prompt, input_assets=state["input_assets"], trace_id=state["trace_id"])
+    debate_summary = (
+        f"{registry.support_role.name}：{sanitize_text(support_summary)}\n"
+        f"{registry.challenge_role.name}：{sanitize_text(challenge_summary)}"
+    )
+    logger.info("debate_node 执行完成 trace_id=%s", state["trace_id"])
+    return {
+        **state,
+        "debate_summary": debate_summary,
+    }
+
+
+def arbitration_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The stage-2 arbitration node.
+
+    What it does:
+    - Summarizes and resolves the debate before the answer node runs.
+
+    Why this is done this way:
+    - Debate alone does not improve answer quality unless the system can turn
+      multiple viewpoints into a single execution decision.
+    """
+
+    if state["route_name"] != "deliberation_chat":
+        return {
+            **state,
+            "arbitration_summary": "当前路由未启用仲裁。",
+        }
+
+    registry = build_workflow_policy_registry()
+    prompt = build_arbitration_prompt(
+        state,
+        role_name=registry.arbitration_role.name,
+        stance_instruction=registry.arbitration_role.stance_instruction,
+    )
+    logger.info("进入 arbitration_node trace_id=%s route=%s", state["trace_id"], state["route_name"])
+    arbitration_summary = call_llm(prompt, input_assets=state["input_assets"], trace_id=state["trace_id"])
+    logger.info("arbitration_node 执行完成 trace_id=%s", state["trace_id"])
+    return {
+        **state,
+        "arbitration_summary": arbitration_summary,
     }
 
 
@@ -359,4 +474,59 @@ def answer_node(state: AgentState) -> AgentState:
         **state,
         "answer": answer,
         "messages": updated_messages,
+    }
+
+
+def critic_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The stage-2 critic node.
+
+    What it does:
+    - Uses a dedicated critic prompt to produce a second-agent quality note.
+
+    Why this is done this way:
+    - Multi-agent orchestration starts with explicit role separation. The critic
+      role should be independently queryable before adding debate graphs.
+    """
+
+    registry = build_workflow_policy_registry()
+    prompt = build_critic_prompt(
+        state,
+        role_name=registry.critic_role.name,
+        stance_instruction=registry.critic_role.stance_instruction,
+    )
+    logger.info("进入 critic_node trace_id=%s route=%s", state["trace_id"], state["route_name"] or "unknown")
+    critic_summary = call_llm(prompt, input_assets=state["input_assets"], trace_id=state["trace_id"])
+    logger.info("critic_node 执行完成 trace_id=%s", state["trace_id"])
+    return {
+        **state,
+        "critic_summary": critic_summary,
+    }
+
+
+def review_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The stage-2 review node.
+
+    What it does:
+    - Evaluates the final answer and writes a concise review result into state.
+
+    Why this is done this way:
+    - Review becomes a first-class part of the execution trace, which makes the
+      workflow easier to audit and prepares the graph for future review agents.
+    """
+
+    review_status, review_summary = review_answer(
+        answer=state["answer"],
+        tool_results=state["tool_results"],
+        critic_summary=state["critic_summary"],
+        arbitration_summary=state["arbitration_summary"],
+    )
+    logger.info("review_node 执行完成 trace_id=%s review_status=%s", state["trace_id"], review_status)
+    return {
+        **state,
+        "review_status": review_status,
+        "review_summary": review_summary,
     }

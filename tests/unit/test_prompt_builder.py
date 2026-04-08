@@ -1,38 +1,33 @@
 """
-Prompt 编排层测试。
+Prompt builder tests.
 
-这是什么：
-- 这是 `app.application.prompt_builder` 的自动化测试文件。
+What this is:
+- Unit tests for prompt composition.
 
-做什么：
-- 验证多模态模板是否被正确注入。
-- 验证规划和执行 Prompt 是否包含核心底座信息。
+What it does:
+- Verifies multimodal context, plan context, and registered role context are
+  injected into prompts.
 
-为什么这么做：
-- Prompt 是 Agent 底座最重要的业务资产之一。
-- 对 Prompt 编排做基础测试，可以避免重构时把关键上下文拼装丢掉。
+Why this is done this way:
+- Prompt composition is critical runtime behavior. Small regressions here can
+  silently break orchestration quality.
 """
+
+from __future__ import annotations
 
 import unittest
 
 from app.application.agent_service import create_initial_state
-from app.application.prompt_builder import build_answer_prompt, build_plan_prompt
+from app.application.prompt_builder import (
+    build_answer_prompt,
+    build_arbitration_prompt,
+    build_critic_prompt,
+    build_debate_prompt,
+    build_plan_prompt,
+)
 
 
 class PromptBuilderTests(unittest.TestCase):
-    """
-    Prompt 编排测试用例。
-
-    这是什么：
-    - 这是 `unittest.TestCase` 子类。
-
-    做什么：
-    - 检查 Prompt 关键片段是否存在。
-
-    为什么这么做：
-    - Prompt 很难做精确输出测试，但至少可以验证底座信息和模态信息没有被漏掉。
-    """
-
     def test_plan_prompt_contains_runtime_context_and_video_asset(self) -> None:
         state = create_initial_state()
         state["user_input"] = "帮我分析这个视频摘要"
@@ -55,6 +50,12 @@ class PromptBuilderTests(unittest.TestCase):
         state = create_initial_state()
         state["user_input"] = "帮我总结内容"
         state["plan"] = "先识别关键信息，再给出简明总结。"
+        state["route_name"] = "document_analysis"
+        state["route_reason"] = "检测到文档输入。"
+        state["debate_summary"] = "当前路由未启用多 Agent 辩论。"
+        state["arbitration_summary"] = "当前路由未启用仲裁。"
+        state["review_status"] = "approved"
+        state["review_summary"] = "结果可交付。"
         state["input_assets"] = [
             {
                 "kind": "file",
@@ -66,9 +67,54 @@ class PromptBuilderTests(unittest.TestCase):
         ]
         prompt = build_answer_prompt(state)
 
-        self.assertIn("当前轮规划结果", prompt)
+        self.assertIn("当前轮规划结果：", prompt)
         self.assertIn("先识别关键信息，再给出简明总结。", prompt)
         self.assertIn("[文件输入]", prompt)
+        self.assertIn("当前复核状态：approved", prompt)
+
+    def test_critic_prompt_contains_answer_route_and_role(self) -> None:
+        state = create_initial_state()
+        state["user_input"] = "请分析这个方案"
+        state["route_name"] = "deliberation_chat"
+        state["route_reason"] = "检测到比较或评审型任务。"
+        state["plan"] = "先梳理方案，再指出优缺点。"
+        state["answer"] = "这是当前方案的总结。"
+
+        prompt = build_critic_prompt(
+            state,
+            role_name="质量批评代理",
+            stance_instruction="优先指出方案说明中的遗漏与风险。",
+        )
+
+        self.assertIn("当前路由决策：deliberation_chat", prompt)
+        self.assertIn("当前最终答案：", prompt)
+        self.assertIn("这是当前方案的总结。", prompt)
+        self.assertIn("当前批评角色：质量批评代理", prompt)
+
+    def test_debate_and_arbitration_prompts_contain_role_context(self) -> None:
+        state = create_initial_state()
+        state["user_input"] = "请比较两个方案的优缺点并给出建议"
+        state["route_name"] = "deliberation_chat"
+        state["route_reason"] = "检测到比较或评审型任务。"
+        state["plan"] = "先梳理两个方案，再比较优缺点。"
+        state["debate_summary"] = "支持方代理：方案 A 更稳。\n质疑方代理：方案 B 成本更低。"
+
+        debate_prompt = build_debate_prompt(
+            state,
+            role_name="支持方代理",
+            stance_instruction="优先指出当前规划与最终回答应保留的强项和有效路径。",
+        )
+        arbitration_prompt = build_arbitration_prompt(
+            state,
+            role_name="仲裁代理",
+            stance_instruction="优先整合双方观点。",
+        )
+
+        self.assertIn("当前角色是：支持方代理", debate_prompt)
+        self.assertIn("先梳理两个方案，再比较优缺点。", debate_prompt)
+        self.assertIn("当前辩论摘要：", arbitration_prompt)
+        self.assertIn("方案 A 更稳", arbitration_prompt)
+        self.assertIn("当前仲裁角色：仲裁代理", arbitration_prompt)
 
     def test_plan_prompt_contains_real_image_metadata(self) -> None:
         state = create_initial_state()
@@ -91,7 +137,3 @@ class PromptBuilderTests(unittest.TestCase):
         self.assertIn("存储方式：local_path", prompt)
         self.assertIn("MIME：image/png", prompt)
         self.assertIn("D:/tmp/tiny.png", prompt)
-
-
-if __name__ == "__main__":
-    unittest.main()

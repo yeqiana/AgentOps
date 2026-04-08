@@ -105,7 +105,15 @@ class UserRecord(TypedDict):
 
     id: str
     user_name: str
+    created_by: str
+    updated_by: str
     created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
 
 
 class SessionRecord(TypedDict):
@@ -123,8 +131,15 @@ class SessionRecord(TypedDict):
     user_id: str
     title: str
     last_trace_id: str
+    created_by: str
+    updated_by: str
     created_at: str
     updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
 
 
 class MessageRecord(TypedDict):
@@ -144,7 +159,15 @@ class MessageRecord(TypedDict):
     trace_id: str
     role: Literal["user", "assistant"]
     content: str
+    created_by: str
+    updated_by: str
     created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
 
 
 class AssetRecord(TypedDict):
@@ -169,7 +192,15 @@ class AssetRecord(TypedDict):
     storage_mode: str
     locator: str
     mime_type: str
+    created_by: str
+    updated_by: str
     created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
 
 
 class TaskRecord(TypedDict):
@@ -189,12 +220,26 @@ class TaskRecord(TypedDict):
     trace_id: str
     status: str
     user_input: str
+    route_name: str
+    route_reason: str
     plan: str
+    debate_summary: str
+    arbitration_summary: str
     answer: str
+    critic_summary: str
+    review_status: str
+    review_summary: str
     tool_count: int
     error_message: str
+    created_by: str
+    updated_by: str
     created_at: str
     updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
 
 
 class ToolResultRecord(TypedDict):
@@ -218,7 +263,112 @@ class ToolResultRecord(TypedDict):
     exit_code: int
     stdout: str
     stderr: str
+    created_by: str
+    updated_by: str
     created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
+class TraceRecord(TypedDict):
+    """
+    请求追踪持久化记录。
+    这是什么：
+    - 数据库中的请求级 trace 行结构。
+    做什么：
+    - 保存 HTTP 请求、执行链路上下文、认证主体、状态码和错误码。
+    为什么这么做：
+    - 阶段 2 需要从“只有 trace_id”升级为“可以查询一次请求完整元信息”的 trace service。
+    """
+
+    trace_id: str
+    request_id: str
+    method: str
+    path: str
+    auth_subject: str
+    auth_type: str
+    session_id: str
+    turn_id: str
+    task_id: str
+    status_code: int
+    error_code: str
+    idempotency_key: str
+    rate_limited: bool
+    created_by: str
+    updated_by: str
+    created_at: str
+    started_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
+class RuntimeConfigRecord(TypedDict):
+    """
+    运行时配置持久化记录。
+    这是什么：
+    - 数据库中的运行时配置覆盖项行结构。
+    做什么：
+    - 保存配置作用域、配置键、配置值和来源说明。
+    为什么这么做：
+    - 阶段 2 需要把 workflow 和 security 策略从纯环境变量升级为可持久化、
+      可查询、可覆盖的配置中心。
+    """
+
+    id: str
+    config_scope: str
+    config_key: str
+    config_value: str
+    value_type: str
+    config_source: str
+    description: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
+class WorkflowRoleRecord(TypedDict):
+    """
+    工作流角色持久化记录。
+    这是什么：
+    - 数据库中的工作流角色定义行结构。
+    做什么：
+    - 保存角色键、角色名称、角色指令、启停状态和排序信息。
+    为什么这么做：
+    - 多 Agent 编排在进入阶段 2 后，角色不应只依赖零散配置键，
+      而应该成为可注册、可查询、可扩展的独立对象。
+    """
+
+    id: str
+    role_key: str
+    role_name: str
+    role_instruction: str
+    is_enabled: bool
+    sort_order: int
+    role_type: str
+    description: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
 
 
 class AgentState(TypedDict):
@@ -238,8 +388,15 @@ class AgentState(TypedDict):
     task_id: str
     trace_id: str
     user_input: str
+    route_name: str
+    route_reason: str
     plan: str
+    debate_summary: str
+    arbitration_summary: str
     answer: str
+    critic_summary: str
+    review_status: str
+    review_summary: str
     messages: list[Message]
     input_assets: list[InputAsset]
     tool_results: list[ToolExecutionResult]

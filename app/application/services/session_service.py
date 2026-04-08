@@ -58,6 +58,9 @@ class SessionService:
         self.session_repository.create(user["id"], state["session_id"], title)
         return state
 
+    def _actor_id(self, state: AgentState) -> str:
+        return state["user_id"] or "system"
+
     def ensure_session(self, session_id: str | None, *, user_name: str, title: str) -> AgentState:
         """
         获取或创建会话状态。
@@ -88,7 +91,11 @@ class SessionService:
         return state
 
     def persist_turn(self, state: AgentState) -> None:
-        self.session_repository.update_last_trace(state["session_id"], state["trace_id"])
+        self.session_repository.update_last_trace(
+            state["session_id"],
+            state["trace_id"],
+            updated_by=self._actor_id(state),
+        )
         self._persist_messages(state, include_assistant_reply=True)
         self._persist_assets_and_task(state, status="completed", error_message="")
 
@@ -102,7 +109,11 @@ class SessionService:
         为什么这么做：
         - “出问题时能查清楚”不能只靠日志，失败任务也必须可查询、可复盘。
         """
-        self.session_repository.update_last_trace(state["session_id"], state["trace_id"])
+        self.session_repository.update_last_trace(
+            state["session_id"],
+            state["trace_id"],
+            updated_by=self._actor_id(state),
+        )
         self._persist_messages(state, include_assistant_reply=False)
         self._persist_assets_and_task(state, status="failed", error_message=error.message)
 
@@ -169,6 +180,8 @@ class SessionService:
         locator = asset.get("locator", asset.get("url", asset.get("local_path", "")))
         mime_type = asset.get("mime_type", "")
         storage_mode = asset.get("storage_mode", "inline_text")
+        timestamp = _now_iso()
+        actor_id = self._actor_id(state)
         return {
             "id": f"asset_{uuid.uuid4().hex}",
             "session_id": state["session_id"],
@@ -181,10 +194,20 @@ class SessionService:
             "storage_mode": storage_mode,
             "locator": locator,
             "mime_type": mime_type,
-            "created_at": _now_iso(),
+            "created_by": actor_id,
+            "updated_by": actor_id,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "ext_data1": "",
+            "ext_data2": "",
+            "ext_data3": "",
+            "ext_data4": "",
+            "ext_data5": "",
         }
 
     def _to_task_record(self, state: AgentState, *, status: str, error_message: str) -> TaskRecord:
+        timestamp = _now_iso()
+        actor_id = self._actor_id(state)
         return {
             "id": state["task_id"],
             "session_id": state["session_id"],
@@ -192,17 +215,33 @@ class SessionService:
             "trace_id": state["trace_id"],
             "status": status,
             "user_input": state["user_input"],
+            "route_name": state["route_name"],
+            "route_reason": state["route_reason"],
             "plan": state["plan"],
+            "debate_summary": state["debate_summary"],
+            "arbitration_summary": state["arbitration_summary"],
             "answer": state["answer"],
+            "critic_summary": state["critic_summary"],
+            "review_status": state["review_status"],
+            "review_summary": state["review_summary"],
             "tool_count": len(state["tool_results"]),
             "error_message": error_message,
-            "created_at": _now_iso(),
-            "updated_at": _now_iso(),
+            "created_by": actor_id,
+            "updated_by": actor_id,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "ext_data1": "",
+            "ext_data2": "",
+            "ext_data3": "",
+            "ext_data4": "",
+            "ext_data5": "",
         }
 
     def _to_tool_result_records(self, state: AgentState) -> list[ToolResultRecord]:
         records: list[ToolResultRecord] = []
+        actor_id = self._actor_id(state)
         for result in state["tool_results"]:
+            timestamp = _now_iso()
             records.append(
                 {
                     "id": f"tool_{uuid.uuid4().hex}",
@@ -215,7 +254,15 @@ class SessionService:
                     "exit_code": result["exit_code"],
                     "stdout": result["stdout"],
                     "stderr": result["stderr"],
-                    "created_at": _now_iso(),
+                    "created_by": actor_id,
+                    "updated_by": actor_id,
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "ext_data1": "",
+                    "ext_data2": "",
+                    "ext_data3": "",
+                    "ext_data4": "",
+                    "ext_data5": "",
                 }
             )
         return records
@@ -227,7 +274,9 @@ class SessionService:
         else:
             current_messages = state["messages"][-1:]
 
+        actor_id = self._actor_id(state)
         for message in current_messages:
+            timestamp = _now_iso()
             messages_to_persist.append(
                 {
                     "id": f"msg_{uuid.uuid4().hex}",
@@ -236,7 +285,15 @@ class SessionService:
                     "trace_id": state["trace_id"],
                     "role": message["role"],
                     "content": message["content"],
-                    "created_at": _now_iso(),
+                    "created_by": actor_id,
+                    "updated_by": actor_id,
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "ext_data1": "",
+                    "ext_data2": "",
+                    "ext_data3": "",
+                    "ext_data4": "",
+                    "ext_data5": "",
                 }
             )
 

@@ -14,7 +14,16 @@
 from langgraph.graph import END, START, StateGraph
 
 from app.domain.models import AgentState
-from app.workflow.nodes import answer_node, plan_node, tool_node
+from app.workflow.nodes import (
+    answer_node,
+    arbitration_node,
+    critic_node,
+    debate_node,
+    plan_node,
+    review_node,
+    router_node,
+    tool_node,
+)
 
 
 def build_graph():
@@ -24,8 +33,8 @@ def build_graph():
     - 这是 graph 工厂函数。
     做什么：
     - 创建状态图。
-    - 注册工具、规划和回答节点。
-    - 定义 `START -> tool_node -> plan_node -> answer_node -> END`。
+    - 注册工具、路由、规划、辩论、仲裁、回答、批评和复核节点。
+    - 定义 `START -> tool_node -> router_node -> plan_node -> debate_node -> arbitration_node -> answer_node -> critic_node -> review_node -> END`。
     为什么这么做：
     - 阶段 1 的重点已经从“单纯对话”升级为“按资产自动触发最小工具调用”。
     - 先做一个线性可解释的工具链，比一开始引入复杂路由更稳定。
@@ -33,10 +42,20 @@ def build_graph():
 
     graph_builder = StateGraph(AgentState)
     graph_builder.add_node("tool_node", tool_node)
+    graph_builder.add_node("router_node", router_node)
     graph_builder.add_node("plan_node", plan_node)
+    graph_builder.add_node("debate_node", debate_node)
+    graph_builder.add_node("arbitration_node", arbitration_node)
     graph_builder.add_node("answer_node", answer_node)
+    graph_builder.add_node("critic_node", critic_node)
+    graph_builder.add_node("review_node", review_node)
     graph_builder.add_edge(START, "tool_node")
-    graph_builder.add_edge("tool_node", "plan_node")
-    graph_builder.add_edge("plan_node", "answer_node")
-    graph_builder.add_edge("answer_node", END)
+    graph_builder.add_edge("tool_node", "router_node")
+    graph_builder.add_edge("router_node", "plan_node")
+    graph_builder.add_edge("plan_node", "debate_node")
+    graph_builder.add_edge("debate_node", "arbitration_node")
+    graph_builder.add_edge("arbitration_node", "answer_node")
+    graph_builder.add_edge("answer_node", "critic_node")
+    graph_builder.add_edge("critic_node", "review_node")
+    graph_builder.add_edge("review_node", END)
     return graph_builder.compile()
