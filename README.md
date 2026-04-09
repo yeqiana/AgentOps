@@ -119,6 +119,7 @@ docs/
 - `GET /health`
 - `GET /auth/me`
 - `GET /auth/roles`
+- `GET /auth/subjects/{auth_subject}/roles`
 - `PUT /auth/subjects/{auth_subject}/roles`
 - `POST /chat`
 - `POST /chat/stream`

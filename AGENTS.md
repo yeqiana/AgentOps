@@ -61,6 +61,7 @@
   - 路由配置模板与校验：`/routing/config/template` + `routing` scope key/type validation
   - 统一鉴权
   - 最小 RBAC
+  - 主体授权关系回查
   - 限流与幂等
   - trace service
   - 恢复告警记录、查询与 trace 关联查询

@@ -1157,6 +1157,14 @@ class ApiHttpTests(unittest.TestCase):
         assign_payload = assign_response.json()
         self.assertEqual(assign_payload["role_keys"], ["viewer"])
 
+        subject_roles_response = client.get("/auth/subjects/apikey:viewer-k/roles", headers=admin_headers)
+        self.assertEqual(subject_roles_response.status_code, 200)
+        subject_roles_payload = subject_roles_response.json()
+        self.assertEqual(subject_roles_payload["auth_subject"], "apikey:viewer-k")
+        self.assertEqual(subject_roles_payload["roles"], ["viewer"])
+        self.assertIn("task.read", subject_roles_payload["permissions"])
+        self.assertEqual(subject_roles_payload["assignments"][0]["role_key"], "viewer")
+
         viewer_response = client.get("/auth/me", headers={"X-API-Key": "viewer-key"})
         self.assertEqual(viewer_response.status_code, 200)
         viewer_profile = viewer_response.json()["profile"]

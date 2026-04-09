@@ -51,6 +51,7 @@ from app.presentation.api.schemas import (
     AuthRolePayload,
     AuthSubjectRoleAssignRequest,
     AuthSubjectRoleAssignResponse,
+    AuthSubjectAccessResponse,
     AuthSubjectRolePayload,
     AsyncTaskRuntimePayload,
     AsyncTaskRuntimeResponse,
@@ -323,6 +324,27 @@ def create_app():
         return AuthSubjectRoleAssignResponse(
             auth_subject=sanitize_text(auth_subject),
             role_keys=[item["role_key"] for item in assignments],
+            assignments=[
+                AuthSubjectRolePayload(
+                    auth_subject=item["auth_subject"],
+                    role_key=item["role_key"],
+                    created_at=item["created_at"],
+                    updated_at=item["updated_at"],
+                )
+                for item in assignments
+            ],
+        )
+
+    @app.get("/auth/subjects/{auth_subject}/roles", response_model=AuthSubjectAccessResponse, responses={400: {"model": ErrorResponse}, 403: {"model": ErrorResponse}})
+    def get_subject_roles(auth_subject: str, request: Request) -> AuthSubjectAccessResponse:
+        require_permission(request, "auth.read")
+        normalized_subject = sanitize_text(auth_subject)
+        assignments = auth_service.get_subject_assignments(auth_subject=normalized_subject)
+        profile = auth_service.get_authorization_profile(normalized_subject, "managed")
+        return AuthSubjectAccessResponse(
+            auth_subject=normalized_subject,
+            roles=profile.roles,
+            permissions=profile.permissions,
             assignments=[
                 AuthSubjectRolePayload(
                     auth_subject=item["auth_subject"],

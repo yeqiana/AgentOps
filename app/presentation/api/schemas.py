@@ -574,3 +574,10 @@ class AuthSubjectRoleAssignResponse(BaseModel):
     auth_subject: str
     role_keys: list[str]
     assignments: list[AuthSubjectRolePayload]
+
+
+class AuthSubjectAccessResponse(BaseModel):
+    auth_subject: str
+    roles: list[str]
+    permissions: list[str]
+    assignments: list[AuthSubjectRolePayload]
