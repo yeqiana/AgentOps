@@ -15,7 +15,7 @@
 
 当前阶段：
 - 阶段 1：已完成
-- 阶段 2：开发中，当前进度约 `88%`
+- 阶段 2：开发中，当前进度约 `90%`
 - 阶段 3：规划中
 
 ## 当前能力
@@ -25,6 +25,8 @@
 - HTTP API
 - HTTP SSE 流式对话：`POST /chat/stream`
 - 异步任务提交预留：`POST /tasks/submit`
+- 异步任务运行时快照：`GET /tasks/runtime`
+- 任务事件查询：`GET /tasks/{task_id}/events`
 - 多模型接入：OpenAI 兼容协议 + `mock`
 - 多模态输入：文本、图片、音频、视频、文件
 - 上传型资产入口：`POST /assets/upload`
@@ -33,6 +35,7 @@
 - 本地工具链：OCR、ASR、视频探测、抽帧、抽音轨
 - 请求路由中台最小版
 - 路由决策持久化、查询与统计
+- 异步任务事件持久化与回查
 - 最小多 Agent 编排：
   - `router`
   - `debate`
@@ -112,7 +115,9 @@ docs/
 - `POST /chat/stream`
 - `POST /tasks/submit`
 - `GET /tasks`
+- `GET /tasks/runtime`
 - `GET /tasks/{task_id}`
+- `GET /tasks/{task_id}/events`
 - `GET /tasks/{task_id}/routes`
 - `GET /sessions`
 - `GET /sessions/{session_id}`
@@ -157,6 +162,7 @@ docs/
 - `biz_message`
 - `biz_asset`
 - `biz_task`
+- `biz_task_event`
 - `biz_tool_result`
 - `biz_route_decision`
 

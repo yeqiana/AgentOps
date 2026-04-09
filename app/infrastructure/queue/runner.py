@@ -23,6 +23,7 @@ from threading import Lock
 
 class BackgroundTaskRunner:
     def __init__(self, *, max_workers: int) -> None:
+        self.max_workers = max_workers
         self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="agentops-task")
         self.lock = Lock()
         self.futures: dict[str, Future[None]] = {}
@@ -42,3 +43,15 @@ class BackgroundTaskRunner:
         with self.lock:
             future = self.futures.get(task_id)
         return bool(future and not future.done())
+
+    def list_active_task_ids(self) -> list[str]:
+        with self.lock:
+            return [task_id for task_id, future in self.futures.items() if not future.done()]
+
+    def get_runtime_snapshot(self) -> dict[str, object]:
+        active_task_ids = self.list_active_task_ids()
+        return {
+            "max_workers": self.max_workers,
+            "active_task_count": len(active_task_ids),
+            "active_task_ids": active_task_ids,
+        }

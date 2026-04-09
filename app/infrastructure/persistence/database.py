@@ -29,7 +29,7 @@ from app.domain.errors import PersistenceError
 
 
 DEFAULT_DATABASE_URL = "sqlite:///data/agent.db"
-SCHEMA_VERSION = "2026_04_09_04"
+SCHEMA_VERSION = "2026_04_09_05"
 
 TABLE_SYS_SCHEMA_VERSION = "sys_schema_version"
 TABLE_SYS_USER = "sys_user"
@@ -46,6 +46,7 @@ TABLE_BIZ_SESSION = "biz_session"
 TABLE_BIZ_MESSAGE = "biz_message"
 TABLE_BIZ_ASSET = "biz_asset"
 TABLE_BIZ_TASK = "biz_task"
+TABLE_BIZ_TASK_EVENT = "biz_task_event"
 TABLE_BIZ_TOOL_RESULT = "biz_tool_result"
 TABLE_BIZ_ROUTE_DECISION = "biz_route_decision"
 
@@ -214,6 +215,19 @@ SCHEMA_STATEMENTS = (
     )
     """,
     f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_BIZ_TASK_EVENT} (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_message TEXT NOT NULL,
+        event_payload_json TEXT NOT NULL,
+{AUDIT_FIELD_SQL}
+    )
+    """,
+    f"""
     CREATE TABLE IF NOT EXISTS {TABLE_BIZ_TOOL_RESULT} (
         id TEXT PRIMARY KEY,
         task_id TEXT NOT NULL,
@@ -283,6 +297,8 @@ INDEX_STATEMENTS = (
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TASK}_session_status_updated ON {TABLE_BIZ_TASK}(session_id, status, updated_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TASK}_trace ON {TABLE_BIZ_TASK}(trace_id)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TASK}_created_at ON {TABLE_BIZ_TASK}(created_at DESC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TASK_EVENT}_task_created ON {TABLE_BIZ_TASK_EVENT}(task_id, created_at ASC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TASK_EVENT}_trace_created ON {TABLE_BIZ_TASK_EVENT}(trace_id, created_at ASC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TOOL_RESULT}_task_created ON {TABLE_BIZ_TOOL_RESULT}(task_id, created_at ASC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TOOL_RESULT}_trace ON {TABLE_BIZ_TOOL_RESULT}(trace_id)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_ROUTE_DECISION}_task_created ON {TABLE_BIZ_ROUTE_DECISION}(task_id, created_at ASC)",
@@ -297,6 +313,7 @@ LEGACY_TABLE_MAPPINGS = (
     ("messages", TABLE_BIZ_MESSAGE),
     ("assets", TABLE_BIZ_ASSET),
     ("tasks", TABLE_BIZ_TASK),
+    ("task_events", TABLE_BIZ_TASK_EVENT),
     ("tool_results", TABLE_BIZ_TOOL_RESULT),
     ("route_decisions", TABLE_BIZ_ROUTE_DECISION),
     ("request_traces", TABLE_SYS_REQUEST_TRACE),
@@ -448,6 +465,17 @@ AUDIT_COLUMN_MIGRATIONS = {
         ("ext_data3", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
         ("ext_data4", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
         ("ext_data5", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
+    ),
+    TABLE_BIZ_TASK_EVENT: (
+        ("created_by", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("updated_by", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("created_at", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+        ("updated_at", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+        ("ext_data1", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data2", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data3", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data4", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data5", f"ALTER TABLE {TABLE_BIZ_TASK_EVENT} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
     ),
     TABLE_BIZ_TOOL_RESULT: (
         ("created_by", f"ALTER TABLE {TABLE_BIZ_TOOL_RESULT} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
@@ -738,7 +766,7 @@ def _upsert_schema_version(connection: sqlite3.Connection) -> None:
         """,
         (
             SCHEMA_VERSION,
-            "Add stage-2 async task prelude support.",
+            "Add stage-2 task event persistence support.",
         ),
     )
 

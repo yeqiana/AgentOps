@@ -28,6 +28,7 @@ from app.domain.models import (
     RouteDecisionRecord,
     RuntimeConfigRecord,
     SessionRecord,
+    TaskEventRecord,
     TaskRecord,
     ToolResultRecord,
     TraceRecord,
@@ -40,6 +41,7 @@ from app.infrastructure.persistence.database import (
     TABLE_BIZ_ROUTE_DECISION,
     TABLE_BIZ_SESSION,
     TABLE_BIZ_TASK,
+    TABLE_BIZ_TASK_EVENT,
     TABLE_BIZ_TOOL_RESULT,
     TABLE_SYS_RUNTIME_CONFIG,
     TABLE_SYS_REQUEST_TRACE,
@@ -882,6 +884,56 @@ class SQLiteTaskRepository:
 
         with get_connection() as connection:
             rows = connection.execute(query, tuple(parameters)).fetchall()
+            return [dict(row) for row in rows]
+
+
+class SQLiteTaskEventRepository:
+    def create(self, event: TaskEventRecord) -> None:
+        with get_connection() as connection:
+            connection.execute(
+                f"""
+                INSERT INTO {TABLE_BIZ_TASK_EVENT} (
+                    id, task_id, session_id, turn_id, trace_id, event_type, event_message, event_payload_json,
+                    created_by, updated_by, created_at, updated_at,
+                    ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event["id"],
+                    event["task_id"],
+                    event["session_id"],
+                    event["turn_id"],
+                    event["trace_id"],
+                    event["event_type"],
+                    event["event_message"],
+                    event["event_payload_json"],
+                    event["created_by"],
+                    event["updated_by"],
+                    event["created_at"],
+                    event["updated_at"],
+                    event["ext_data1"],
+                    event["ext_data2"],
+                    event["ext_data3"],
+                    event["ext_data4"],
+                    event["ext_data5"],
+                ),
+            )
+
+    def list_by_task(self, task_id: str, *, limit: int = 100, offset: int = 0) -> list[TaskEventRecord]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, task_id, session_id, turn_id, trace_id, event_type, event_message, event_payload_json,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_BIZ_TASK_EVENT}
+                WHERE task_id = ?
+                ORDER BY created_at ASC
+                LIMIT ?
+                OFFSET ?
+                """,
+                (task_id, limit, offset),
+            ).fetchall()
             return [dict(row) for row in rows]
 
 

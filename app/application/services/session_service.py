@@ -13,17 +13,19 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 
 from app.domain.errors import AgentError
 from app.application.agent_service import create_initial_state
-from app.domain.models import AgentState, AssetRecord, InputAsset, MessageRecord, RouteDecisionRecord, TaskRecord, ToolResultRecord
+from app.domain.models import AgentState, AssetRecord, InputAsset, MessageRecord, RouteDecisionRecord, TaskEventRecord, TaskRecord, ToolResultRecord
 from app.infrastructure.persistence.repositories import (
     SQLiteAssetRepository,
     SQLiteMessageRepository,
     SQLiteRouteDecisionRepository,
     SQLiteSessionRepository,
+    SQLiteTaskEventRepository,
     SQLiteTaskRepository,
     SQLiteToolResultRepository,
     SQLiteUserRepository,
@@ -51,6 +53,7 @@ class SessionService:
         self.message_repository = SQLiteMessageRepository()
         self.asset_repository = SQLiteAssetRepository()
         self.task_repository = SQLiteTaskRepository()
+        self.task_event_repository = SQLiteTaskEventRepository()
         self.tool_result_repository = SQLiteToolResultRepository()
         self.route_decision_repository = SQLiteRouteDecisionRepository()
 
@@ -100,6 +103,12 @@ class SessionService:
         )
         self._persist_messages(state, include_assistant_reply=True)
         self._persist_assets_and_task(state, status="completed", error_message="")
+        self.record_task_event(
+            state,
+            event_type="completed",
+            event_message="任务执行完成。",
+            event_payload={"status": "completed", "tool_count": len(state["tool_results"])},
+        )
 
     def persist_queued_turn(self, state: AgentState) -> None:
         """
@@ -117,6 +126,12 @@ class SessionService:
             updated_by=self._actor_id(state),
         )
         self.task_repository.create_or_update(self._to_task_record(state, status="queued", error_message=""))
+        self.record_task_event(
+            state,
+            event_type="queued",
+            event_message="异步任务已进入排队状态。",
+            event_payload={"status": "queued"},
+        )
 
     def mark_task_running(self, state: AgentState) -> None:
         """
@@ -134,6 +149,12 @@ class SessionService:
             updated_by=self._actor_id(state),
         )
         self.task_repository.create_or_update(self._to_task_record(state, status="running", error_message=""))
+        self.record_task_event(
+            state,
+            event_type="running",
+            event_message="异步任务开始后台执行。",
+            event_payload={"status": "running"},
+        )
 
     def persist_failed_turn(self, state: AgentState, error: AgentError) -> None:
         """
@@ -152,6 +173,12 @@ class SessionService:
         )
         self._persist_messages(state, include_assistant_reply=False)
         self._persist_assets_and_task(state, status="failed", error_message=error.message)
+        self.record_task_event(
+            state,
+            event_type="failed",
+            event_message=error.message,
+            event_payload={"status": "failed", "error_code": error.code, "category": error.category},
+        )
 
     def get_session_bundle(self, session_id: str) -> dict[str, object]:
         session = self.session_repository.get_by_id(session_id)
@@ -173,9 +200,30 @@ class SessionService:
             return None
         return {
             "task": task,
+            "task_events": self.task_event_repository.list_by_task(task_id),
             "tool_results": self.tool_result_repository.list_by_task(task_id),
             "route_decisions": self.route_decision_repository.list_by_task(task_id),
         }
+
+    def list_task_events(self, task_id: str, *, limit: int = 100, offset: int = 0) -> list[TaskEventRecord]:
+        return self.task_event_repository.list_by_task(task_id, limit=limit, offset=offset)
+
+    def record_task_event(
+        self,
+        state: AgentState,
+        *,
+        event_type: str,
+        event_message: str,
+        event_payload: dict[str, object] | None = None,
+    ) -> None:
+        self.task_event_repository.create(
+            self._to_task_event_record(
+                state,
+                event_type=event_type,
+                event_message=event_message,
+                event_payload=event_payload or {},
+            )
+        )
 
     def list_route_decisions(
         self,
@@ -339,6 +387,36 @@ class SessionService:
                 }
             )
         return records
+
+    def _to_task_event_record(
+        self,
+        state: AgentState,
+        *,
+        event_type: str,
+        event_message: str,
+        event_payload: dict[str, object],
+    ) -> TaskEventRecord:
+        timestamp = _now_iso()
+        actor_id = self._actor_id(state)
+        return {
+            "id": f"task_event_{uuid.uuid4().hex}",
+            "task_id": state["task_id"],
+            "session_id": state["session_id"],
+            "turn_id": state["turn_id"],
+            "trace_id": state["trace_id"],
+            "event_type": event_type,
+            "event_message": event_message,
+            "event_payload_json": json.dumps(event_payload, ensure_ascii=False, sort_keys=True),
+            "created_by": actor_id,
+            "updated_by": actor_id,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "ext_data1": "",
+            "ext_data2": "",
+            "ext_data3": "",
+            "ext_data4": "",
+            "ext_data5": "",
+        }
 
     def _to_route_decision_records(self, state: AgentState) -> list[RouteDecisionRecord]:
         if not state["route_name"]:
