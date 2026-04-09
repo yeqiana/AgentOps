@@ -92,6 +92,8 @@ from app.presentation.api.schemas import (
     SecurityConfigPayload,
     SecurityConfigResponse,
     MessagePayload,
+    OperationsOverviewPayload,
+    OperationsOverviewResponse,
     SessionResponse,
     SessionSummaryPayload,
     SessionSummaryResponse,
@@ -994,6 +996,60 @@ def create_app():
                         last_updated_at=item["last_updated_at"] or "",
                     )
                     for item in stats
+                ],
+            )
+        )
+
+    @app.get("/operations/overview", response_model=OperationsOverviewResponse)
+    def get_operations_overview(request: Request) -> OperationsOverviewResponse:
+        require_permission(request, "task.read")
+        require_permission(request, "alert.read")
+        task_stats = session_service.list_task_status_stats()
+        runtime = async_task_service.get_runtime_snapshot()
+        recent_tasks = session_service.list_tasks(limit=5, offset=0)
+        route_stats = session_service.list_route_decision_stats(limit=5, offset=0)
+        recent_alerts = alert_service.list_alerts(limit=5, offset=0)
+        return OperationsOverviewResponse(
+            summary=OperationsOverviewPayload(
+                task_stats=[
+                    TaskStatusStatPayload(
+                        status=item["status"],
+                        task_count=item["task_count"],
+                        last_updated_at=item["last_updated_at"] or "",
+                    )
+                    for item in task_stats
+                ],
+                runtime=AsyncTaskRuntimePayload(
+                    max_workers=int(runtime["max_workers"]),
+                    active_task_count=int(runtime["active_task_count"]),
+                    active_task_ids=list(runtime["active_task_ids"]),
+                ),
+                recent_tasks=[TaskPayload(**item["task"]) for item in recent_tasks],
+                route_stats=[
+                    RouteDecisionStatPayload(
+                        route_name=item["route_name"],
+                        route_source=item["route_source"],
+                        decision_count=item["decision_count"],
+                        last_trace_id=item["last_trace_id"],
+                        last_task_id=item["last_task_id"],
+                        last_decided_at=item["last_decided_at"],
+                    )
+                    for item in route_stats
+                ],
+                recent_alerts=[
+                    AlertEventPayload(
+                        id=item["id"],
+                        trace_id=item["trace_id"],
+                        source_type=item["source_type"],
+                        source_name=item["source_name"],
+                        severity=item["severity"],
+                        event_code=item["event_code"],
+                        message=item["message"],
+                        payload_json=item["payload_json"],
+                        created_at=item["created_at"],
+                        updated_at=item["updated_at"],
+                    )
+                    for item in recent_alerts
                 ],
             )
         )

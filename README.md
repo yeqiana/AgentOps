@@ -127,6 +127,7 @@ docs/
 - `GET /tasks`
 - `GET /tasks/stats`
 - `GET /tasks/runtime`
+- `GET /operations/overview`
 - `POST /tasks/{task_id}/cancel`
 - `POST /tasks/{task_id}/retry`
 - `GET /tasks/{task_id}`

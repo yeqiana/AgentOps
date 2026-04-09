@@ -285,6 +285,18 @@ class TaskStatsResponse(BaseModel):
     summary: TaskStatsPayload
 
 
+class OperationsOverviewPayload(BaseModel):
+    task_stats: list[TaskStatusStatPayload] = Field(default_factory=list)
+    runtime: AsyncTaskRuntimePayload
+    recent_tasks: list[TaskPayload] = Field(default_factory=list)
+    route_stats: list[RouteDecisionStatPayload] = Field(default_factory=list)
+    recent_alerts: list["AlertEventPayload"] = Field(default_factory=list)
+
+
+class OperationsOverviewResponse(BaseModel):
+    summary: OperationsOverviewPayload
+
+
 class TaskSummaryPayload(BaseModel):
     task: TaskPayload
     trace: TracePayload | None = None
