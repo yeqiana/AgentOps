@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.domain.errors import ValidationError
+
 from app.config import (
     get_allowed_tools,
     get_workflow_executor_role_instruction,
@@ -88,6 +90,28 @@ class RuntimeConfigService:
             value_type=value_type,
             description=description,
             updated_by=updated_by,
+        )
+
+    def validate_config_entry(self, *, scope: str, key: str, value: str, value_type: str) -> None:
+        normalized_scope = scope.strip().lower()
+        if normalized_scope != "routing":
+            return
+
+        normalized_key = key.strip()
+        normalized_value_type = (value_type or "str").strip().lower()
+        definitions = self.get_routing_config_template()
+        definition = definitions.get(normalized_key)
+        if not definition:
+            raise ValidationError(f"routing 配置项 `{normalized_key}` 不存在。")
+
+        expected_type = definition["value_type"]
+        if normalized_value_type != expected_type:
+            raise ValidationError(f"routing 配置项 `{normalized_key}` 只允许 `{expected_type}` 类型。")
+
+        self._validate_typed_value(
+            key=normalized_key,
+            value=value,
+            value_type=normalized_value_type,
         )
 
     def get_effective_workflow_config(self) -> dict[str, Any]:
@@ -303,6 +327,29 @@ class RuntimeConfigService:
         rows = self.repository.list_configs(scope=scope)
         return {row["config_key"]: row["config_value"] for row in rows}
 
+    def get_routing_config_template(self) -> dict[str, dict[str, str]]:
+        return {
+            "image_route_name": {"value_type": "str", "description": "图片输入默认命中的路由名称。", "example_value": "image_analysis"},
+            "image_route_reason": {"value_type": "str", "description": "图片输入默认命中的路由原因。", "example_value": "检测到图片资产，优先走图片理解与 OCR 增强链。"},
+            "audio_route_name": {"value_type": "str", "description": "音频输入默认命中的路由名称。", "example_value": "audio_analysis"},
+            "audio_route_reason": {"value_type": "str", "description": "音频输入默认命中的路由原因。", "example_value": "检测到音频资产，优先走音频转写与分析链。"},
+            "video_route_name": {"value_type": "str", "description": "视频输入默认命中的路由名称。", "example_value": "video_analysis"},
+            "video_route_reason": {"value_type": "str", "description": "视频输入默认命中的路由原因。", "example_value": "检测到视频资产，优先走视频分析与后处理增强链。"},
+            "file_route_name": {"value_type": "str", "description": "文件输入默认命中的路由名称。", "example_value": "document_analysis"},
+            "file_route_reason": {"value_type": "str", "description": "文件输入默认命中的路由原因。", "example_value": "检测到文档资产，优先走文档解析与总结链。"},
+            "tool_augmented_route_name": {"value_type": "str", "description": "已有工具结果时命中的路由名称。", "example_value": "tool_augmented_chat"},
+            "tool_augmented_route_reason": {"value_type": "str", "description": "已有工具结果时命中的路由原因。", "example_value": "检测到已有工具结果，优先结合工具输出完成回答。"},
+            "deliberation_enabled": {"value_type": "bool", "description": "是否启用审慎型任务路由判定。", "example_value": "true"},
+            "deliberation_keywords": {"value_type": "csv", "description": "触发审慎型路由的关键词列表。", "example_value": "比较,评审,利弊,方案"},
+            "deliberation_route_name": {"value_type": "str", "description": "审慎型任务命中的路由名称。", "example_value": "deliberation_chat"},
+            "deliberation_route_reason": {"value_type": "str", "description": "审慎型任务命中的路由原因。", "example_value": "检测到比较或评审型任务，优先进入更审慎的分析路径。"},
+            "contextual_message_threshold": {"value_type": "int", "description": "进入上下文路由所需的最小消息数。", "example_value": "3"},
+            "contextual_route_name": {"value_type": "str", "description": "多轮上下文任务命中的路由名称。", "example_value": "contextual_chat"},
+            "contextual_route_reason": {"value_type": "str", "description": "多轮上下文任务命中的路由原因。", "example_value": "检测到多轮上下文，优先保持连续对话一致性。"},
+            "default_route_name": {"value_type": "str", "description": "默认兜底路由名称。", "example_value": "direct_chat"},
+            "default_route_reason": {"value_type": "str", "description": "默认兜底路由原因。", "example_value": "当前是普通文本任务，优先走标准规划与回答链。"},
+        }
+
     @staticmethod
     def _as_bool(raw_value: str | None, fallback: bool) -> bool:
         if raw_value is None:
@@ -330,3 +377,22 @@ class RuntimeConfigService:
         if raw_value is None:
             return fallback
         return raw_value.strip() or fallback
+
+    @staticmethod
+    def _validate_typed_value(*, key: str, value: str, value_type: str) -> None:
+        normalized_value = value.strip()
+        if value_type == "bool":
+            if normalized_value.lower() not in {"1", "0", "true", "false", "yes", "no", "on", "off"}:
+                raise ValidationError(f"routing 配置项 `{key}` 的值不是合法的 bool。")
+            return
+        if value_type == "int":
+            try:
+                int(normalized_value)
+            except ValueError as error:
+                raise ValidationError(f"routing 配置项 `{key}` 的值不是合法的 int。") from error
+            return
+        if value_type == "csv" and not normalized_value:
+            raise ValidationError(f"routing 配置项 `{key}` 的值不能为空。")
+            return
+        if value_type == "str" and not normalized_value:
+            raise ValidationError(f"routing 配置项 `{key}` 的值不能为空。")
