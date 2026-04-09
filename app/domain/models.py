@@ -224,6 +224,7 @@ class TaskRecord(TypedDict):
     protocol_summary: str
     route_name: str
     route_reason: str
+    route_source: str
     plan: str
     debate_summary: str
     arbitration_summary: str
@@ -265,6 +266,39 @@ class ToolResultRecord(TypedDict):
     exit_code: int
     stdout: str
     stderr: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
+class RouteDecisionRecord(TypedDict):
+    """
+    路由决策持久化记录。
+
+    这是什么：
+    - 数据库中的请求路由决策行结构。
+
+    做什么：
+    - 保存任务、会话、轮次、trace、路由名称、原因和决策来源。
+
+    为什么这么做：
+    - 请求路由中台要可查询、可追踪，仅写在任务表的摘要字段里还不够。
+    """
+
+    id: str
+    task_id: str
+    session_id: str
+    turn_id: str
+    trace_id: str
+    route_name: str
+    route_reason: str
+    route_source: str
     created_by: str
     updated_by: str
     created_at: str
@@ -545,6 +579,7 @@ class AgentState(TypedDict):
     protocol_summary: str
     route_name: str
     route_reason: str
+    route_source: str
     plan: str
     debate_summary: str
     arbitration_summary: str

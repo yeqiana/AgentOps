@@ -102,6 +102,7 @@ def create_initial_state(user_id: str = "local-user") -> AgentState:
         "protocol_summary": "",
         "route_name": "",
         "route_reason": "",
+        "route_source": "",
         "plan": "",
         "debate_summary": "",
         "arbitration_summary": "",

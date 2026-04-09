@@ -18,10 +18,11 @@ from datetime import datetime, timezone
 
 from app.domain.errors import AgentError
 from app.application.agent_service import create_initial_state
-from app.domain.models import AgentState, AssetRecord, InputAsset, MessageRecord, TaskRecord, ToolResultRecord
+from app.domain.models import AgentState, AssetRecord, InputAsset, MessageRecord, RouteDecisionRecord, TaskRecord, ToolResultRecord
 from app.infrastructure.persistence.repositories import (
     SQLiteAssetRepository,
     SQLiteMessageRepository,
+    SQLiteRouteDecisionRepository,
     SQLiteSessionRepository,
     SQLiteTaskRepository,
     SQLiteToolResultRepository,
@@ -51,6 +52,7 @@ class SessionService:
         self.asset_repository = SQLiteAssetRepository()
         self.task_repository = SQLiteTaskRepository()
         self.tool_result_repository = SQLiteToolResultRepository()
+        self.route_decision_repository = SQLiteRouteDecisionRepository()
 
     def create_state(self, *, user_name: str = "local-cli-user", title: str = "Agent Session") -> AgentState:
         user = self.user_repository.get_or_create(user_name)
@@ -99,6 +101,40 @@ class SessionService:
         self._persist_messages(state, include_assistant_reply=True)
         self._persist_assets_and_task(state, status="completed", error_message="")
 
+    def persist_queued_turn(self, state: AgentState) -> None:
+        """
+        记录排队中的任务。
+        这是什么：
+        - 异步任务提交后的首个持久化入口。
+        做什么：
+        - 只写入任务快照，不提前写入消息、资产和工具结果。
+        为什么这么做：
+        - 异步任务还未真正执行时，只需要让任务可查，避免提前写入最终态数据。
+        """
+        self.session_repository.update_last_trace(
+            state["session_id"],
+            state["trace_id"],
+            updated_by=self._actor_id(state),
+        )
+        self.task_repository.create_or_update(self._to_task_record(state, status="queued", error_message=""))
+
+    def mark_task_running(self, state: AgentState) -> None:
+        """
+        标记任务运行中。
+        这是什么：
+        - 异步任务执行前的状态流转入口。
+        做什么：
+        - 将任务状态更新为 running，供任务查询接口回查。
+        为什么这么做：
+        - 预留异步任务体系时，至少要有 queued -> running -> completed/failed 这条状态链。
+        """
+        self.session_repository.update_last_trace(
+            state["session_id"],
+            state["trace_id"],
+            updated_by=self._actor_id(state),
+        )
+        self.task_repository.create_or_update(self._to_task_record(state, status="running", error_message=""))
+
     def persist_failed_turn(self, state: AgentState, error: AgentError) -> None:
         """
         持久化失败任务。
@@ -138,7 +174,40 @@ class SessionService:
         return {
             "task": task,
             "tool_results": self.tool_result_repository.list_by_task(task_id),
+            "route_decisions": self.route_decision_repository.list_by_task(task_id),
         }
+
+    def list_route_decisions(
+        self,
+        *,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        trace_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[RouteDecisionRecord]:
+        return self.route_decision_repository.list_decisions(
+            task_id=task_id,
+            session_id=session_id,
+            trace_id=trace_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def list_route_decision_stats(
+        self,
+        *,
+        session_id: str | None = None,
+        trace_id: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        return self.route_decision_repository.list_stats(
+            session_id=session_id,
+            trace_id=trace_id,
+            limit=limit,
+            offset=offset,
+        )
 
     def list_tasks_by_session(self, session_id: str, limit: int = 20, offset: int = 0) -> list[dict[str, object]]:
         tasks = self.task_repository.list_by_session(session_id, limit=limit, offset=offset)
@@ -146,6 +215,7 @@ class SessionService:
             {
                 "task": task,
                 "tool_results": self.tool_result_repository.list_by_task(task["id"]),
+                "route_decisions": self.route_decision_repository.list_by_task(task["id"]),
             }
             for task in tasks
         ]
@@ -172,6 +242,7 @@ class SessionService:
             {
                 "task": task,
                 "tool_results": self.tool_result_repository.list_by_task(task["id"]),
+                "route_decisions": self.route_decision_repository.list_by_task(task["id"]),
             }
             for task in tasks
         ]
@@ -269,6 +340,34 @@ class SessionService:
             )
         return records
 
+    def _to_route_decision_records(self, state: AgentState) -> list[RouteDecisionRecord]:
+        if not state["route_name"]:
+            return []
+
+        timestamp = _now_iso()
+        actor_id = self._actor_id(state)
+        return [
+            {
+                "id": f"route_{uuid.uuid4().hex}",
+                "task_id": state["task_id"],
+                "session_id": state["session_id"],
+                "turn_id": state["turn_id"],
+                "trace_id": state["trace_id"],
+                "route_name": state["route_name"],
+                "route_reason": state["route_reason"],
+                "route_source": state["route_source"] or "request_entry",
+                "created_by": actor_id,
+                "updated_by": actor_id,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                "ext_data1": "",
+                "ext_data2": "",
+                "ext_data3": "",
+                "ext_data4": "",
+                "ext_data5": "",
+            }
+        ]
+
     def _persist_messages(self, state: AgentState, *, include_assistant_reply: bool) -> None:
         messages_to_persist: list[MessageRecord] = []
         if include_assistant_reply:
@@ -309,3 +408,4 @@ class SessionService:
         self.asset_repository.create_many(asset_records)
         self.task_repository.create_or_update(self._to_task_record(state, status=status, error_message=error_message))
         self.tool_result_repository.replace_for_task(state["task_id"], self._to_tool_result_records(state))
+        self.route_decision_repository.replace_for_task(state["task_id"], self._to_route_decision_records(state))

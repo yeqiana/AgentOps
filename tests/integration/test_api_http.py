@@ -19,6 +19,7 @@ import base64
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -136,6 +137,90 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(workflow_response.status_code, 200)
         workflow_payload = workflow_response.json()["workflow"]
         self.assertEqual(workflow_payload["execution_mode"], "standard")
+
+    def test_runtime_config_endpoints_affect_routing_decision(self) -> None:
+        put_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "routing",
+                "config_key": "image_route_name",
+                "config_value": "custom_image_flow",
+                "value_type": "str",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(put_response.status_code, 200)
+
+        response = self.client.post(
+            "/assets/analyze",
+            json={
+                "input": "/image 这是一张测试图片",
+                "run_tools": False,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["route_name"], "custom_image_flow")
+
+    def test_routing_config_endpoint_returns_visual_snapshot(self) -> None:
+        put_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "routing",
+                "config_key": "contextual_message_threshold",
+                "config_value": "5",
+                "value_type": "int",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(put_response.status_code, 200)
+
+        response = self.client.get("/routing/config")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["routing"]
+        self.assertEqual(payload["image_route"]["route_name"], "image_analysis")
+        self.assertIn("route_reason", payload["file_route"])
+        self.assertTrue(payload["deliberation_route"]["enabled"])
+        self.assertIsInstance(payload["deliberation_route"]["keywords"], list)
+        self.assertEqual(payload["contextual_route"]["message_threshold"], 5)
+
+    def test_route_stats_endpoint_returns_grouped_route_summary(self) -> None:
+        first_response = self.client.post(
+            "/chat",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "route-stat-user",
+                "session_title": "Route Stats Session",
+            },
+        )
+        self.assertEqual(first_response.status_code, 200)
+        first_payload = first_response.json()
+
+        second_response = self.client.post(
+            "/assets/upload",
+            files={"file": ("note.txt", b"hello upload", "text/plain")},
+            data={"kind": "file", "prompt": "请总结文档"},
+        )
+        self.assertEqual(second_response.status_code, 200)
+        second_payload = second_response.json()
+
+        stats_response = self.client.get("/routes/stats")
+        self.assertEqual(stats_response.status_code, 200)
+        stats_payload = stats_response.json()["stats"]
+        self.assertGreaterEqual(len(stats_payload), 2)
+        route_names = {item["route_name"] for item in stats_payload}
+        self.assertIn(first_payload["route_name"], route_names)
+        self.assertIn(second_payload["route_name"], route_names)
+
+        filtered_stats_response = self.client.get(f"/routes/stats?trace_id={second_payload['trace_id']}")
+        self.assertEqual(filtered_stats_response.status_code, 200)
+        filtered_stats = filtered_stats_response.json()["stats"]
+        self.assertEqual(len(filtered_stats), 1)
+        self.assertEqual(filtered_stats[0]["route_name"], second_payload["route_name"])
+        self.assertEqual(filtered_stats[0]["last_trace_id"], second_payload["trace_id"])
+        self.assertGreaterEqual(filtered_stats[0]["decision_count"], 1)
 
     def test_workflow_role_endpoints_can_query_and_update_role(self) -> None:
         list_response = self.client.get("/workflow/roles")
@@ -413,7 +498,23 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(task_payload["task"]["critic_summary"], payload["critic_summary"])
         self.assertEqual(task_payload["task"]["review_status"], payload["review_status"])
         self.assertIn("tool_results", task_payload)
+        self.assertIn("route_decisions", task_payload)
         self.assertIsInstance(task_payload["tool_results"], list)
+        self.assertIsInstance(task_payload["route_decisions"], list)
+        self.assertGreaterEqual(len(task_payload["route_decisions"]), 1)
+        self.assertEqual(task_payload["route_decisions"][0]["route_name"], payload["route_name"])
+
+        task_routes_response = self.client.get(f"/tasks/{payload['task_id']}/routes")
+        self.assertEqual(task_routes_response.status_code, 200)
+        task_routes_payload = task_routes_response.json()
+        self.assertGreaterEqual(len(task_routes_payload["route_decisions"]), 1)
+        self.assertEqual(task_routes_payload["route_decisions"][0]["task_id"], payload["task_id"])
+
+        filtered_routes_response = self.client.get(f"/routes?trace_id={payload['trace_id']}")
+        self.assertEqual(filtered_routes_response.status_code, 200)
+        filtered_routes_payload = filtered_routes_response.json()
+        self.assertGreaterEqual(len(filtered_routes_payload["route_decisions"]), 1)
+        self.assertEqual(filtered_routes_payload["route_decisions"][0]["trace_id"], payload["trace_id"])
 
         tasks_response = self.client.get("/tasks?status=completed")
         self.assertEqual(tasks_response.status_code, 200)
@@ -448,6 +549,35 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(task_response.status_code, 200)
         task_payload = task_response.json()
         self.assertEqual(task_payload["task"]["id"], metadata["task_id"])
+
+    def test_async_task_submit_endpoint_queues_and_completes_task(self) -> None:
+        response = self.client.post(
+            "/tasks/submit",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "async-user",
+                "session_title": "Async Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "queued")
+        self.assertTrue(payload["task_id"])
+
+        final_status = ""
+        final_task_payload: dict[str, object] = {}
+        for _ in range(20):
+            task_response = self.client.get(f"/tasks/{payload['task_id']}")
+            self.assertEqual(task_response.status_code, 200)
+            final_task_payload = task_response.json()
+            final_status = final_task_payload["task"]["status"]
+            if final_status in {"completed", "failed"}:
+                break
+            time.sleep(0.1)
+
+        self.assertIn(final_status, {"completed", "failed"})
+        self.assertEqual(final_task_payload["task"]["id"], payload["task_id"])
+        self.assertEqual(final_task_payload["task"]["session_id"], payload["session_id"])
 
     def test_task_not_found_returns_structured_error(self) -> None:
         response = self.client.get("/tasks/task_not_exist")
@@ -544,6 +674,8 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["user_input"], "请分析图片")
+        self.assertEqual(payload["route_name"], "image_analysis")
+        self.assertTrue(payload["route_reason"])
         self.assertEqual(payload["tool_results"][0]["tool_name"], "ocr_tesseract")
         self.assertIn("python_echo", payload["available_tools"])
         self.assertIn("HELLO 123", payload["task_state"])
@@ -563,6 +695,8 @@ class ApiHttpTests(unittest.TestCase):
         self.assertTrue(payload["trace_id"])
         self.assertEqual(payload["inferred_kind"], "file")
         self.assertEqual(payload["user_input"], "请总结文档")
+        self.assertEqual(payload["route_name"], "document_analysis")
+        self.assertTrue(payload["route_reason"])
         self.assertEqual(payload["upload_dir"], str(self.upload_path))
         self.assertTrue(payload["saved_path"].startswith(str(self.upload_path)))
         self.assertTrue(Path(payload["saved_path"]).exists())
@@ -611,6 +745,7 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["inferred_kind"], "image")
+        self.assertEqual(payload["route_name"], "image_analysis")
         self.assertEqual(payload["tool_results"][0]["tool_name"], "ocr_tesseract")
         self.assertIn(str(self.upload_path), payload["saved_path"])
         self.assertIn(payload["saved_path"], payload["tool_results"][0]["stdout"])

@@ -111,3 +111,27 @@ class RuntimeConfigServiceTests(unittest.TestCase):
 
         self.assertEqual(effective["upload_max_bytes"], 512)
         self.assertEqual(effective["allowed_tools"], ["python_echo", "ocr_tesseract"])
+
+    def test_routing_db_override_is_parsed_by_type(self) -> None:
+        service = RuntimeConfigService()
+        service.upsert_config(
+            scope="routing",
+            key="contextual_message_threshold",
+            value="5",
+            value_type="int",
+            description="routing threshold",
+            updated_by="tester",
+        )
+        service.upsert_config(
+            scope="routing",
+            key="deliberation_keywords",
+            value="比较,评审,权衡",
+            value_type="csv",
+            description="routing keywords",
+            updated_by="tester",
+        )
+
+        effective = service.get_effective_routing_config()
+
+        self.assertEqual(effective["contextual_message_threshold"], 5)
+        self.assertEqual(effective["deliberation_keywords"], ["比较", "评审", "权衡"])

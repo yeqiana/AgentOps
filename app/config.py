@@ -81,6 +81,8 @@ UPLOAD_ALLOWED_KINDS_ENV = "APP_UPLOAD_ALLOWED_KINDS"
 
 RECOVERY_LLM_DEGRADE_TO_MOCK_ENV = "APP_RECOVERY_LLM_DEGRADE_TO_MOCK"
 RECOVERY_TOOL_SOFT_FAIL_ENV = "APP_RECOVERY_TOOL_SOFT_FAIL"
+ASYNC_TASK_ENABLED_ENV = "APP_ASYNC_TASK_ENABLED"
+ASYNC_TASK_WORKERS_ENV = "APP_ASYNC_TASK_WORKERS"
 
 DEFAULT_USER_PROFILE = "默认用户，无额外偏好。"
 DEFAULT_TASK_STATE = "当前无长期任务状态。"
@@ -120,6 +122,8 @@ DEFAULT_ALLOWED_TOOLS: list[str] = []
 DEFAULT_RECOVERY_LLM_DEGRADE_TO_MOCK = False
 DEFAULT_RECOVERY_TOOL_SOFT_FAIL = False
 DEFAULT_RBAC_ENABLED = False
+DEFAULT_ASYNC_TASK_ENABLED = True
+DEFAULT_ASYNC_TASK_WORKERS = 2
 
 
 def _get_bool_env(name: str, default: bool = False) -> bool:
@@ -402,3 +406,11 @@ def is_recovery_llm_degrade_to_mock_enabled() -> bool:
 
 def is_recovery_tool_soft_fail_enabled() -> bool:
     return _get_bool_env(RECOVERY_TOOL_SOFT_FAIL_ENV, default=DEFAULT_RECOVERY_TOOL_SOFT_FAIL)
+
+
+def is_async_task_enabled() -> bool:
+    return _get_bool_env(ASYNC_TASK_ENABLED_ENV, default=DEFAULT_ASYNC_TASK_ENABLED)
+
+
+def get_async_task_workers() -> int:
+    return _get_int_env(ASYNC_TASK_WORKERS_ENV, DEFAULT_ASYNC_TASK_WORKERS)

@@ -29,7 +29,7 @@ from app.domain.errors import PersistenceError
 
 
 DEFAULT_DATABASE_URL = "sqlite:///data/agent.db"
-SCHEMA_VERSION = "2026_04_09_02"
+SCHEMA_VERSION = "2026_04_09_04"
 
 TABLE_SYS_SCHEMA_VERSION = "sys_schema_version"
 TABLE_SYS_USER = "sys_user"
@@ -47,6 +47,7 @@ TABLE_BIZ_MESSAGE = "biz_message"
 TABLE_BIZ_ASSET = "biz_asset"
 TABLE_BIZ_TASK = "biz_task"
 TABLE_BIZ_TOOL_RESULT = "biz_tool_result"
+TABLE_BIZ_ROUTE_DECISION = "biz_route_decision"
 
 AUDIT_FIELD_SQL = """
         created_by TEXT NOT NULL,
@@ -228,6 +229,19 @@ SCHEMA_STATEMENTS = (
     )
     """,
     f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_BIZ_ROUTE_DECISION} (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        route_name TEXT NOT NULL,
+        route_reason TEXT NOT NULL,
+        route_source TEXT NOT NULL,
+{AUDIT_FIELD_SQL}
+    )
+    """,
+    f"""
     CREATE TABLE IF NOT EXISTS {TABLE_SYS_REQUEST_TRACE} (
         trace_id TEXT PRIMARY KEY,
         request_id TEXT NOT NULL,
@@ -271,6 +285,8 @@ INDEX_STATEMENTS = (
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TASK}_created_at ON {TABLE_BIZ_TASK}(created_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TOOL_RESULT}_task_created ON {TABLE_BIZ_TOOL_RESULT}(task_id, created_at ASC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_TOOL_RESULT}_trace ON {TABLE_BIZ_TOOL_RESULT}(trace_id)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_ROUTE_DECISION}_task_created ON {TABLE_BIZ_ROUTE_DECISION}(task_id, created_at ASC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_ROUTE_DECISION}_trace ON {TABLE_BIZ_ROUTE_DECISION}(trace_id)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_REQUEST_TRACE}_task_id ON {TABLE_SYS_REQUEST_TRACE}(task_id)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_REQUEST_TRACE}_path_status ON {TABLE_SYS_REQUEST_TRACE}(path, status_code, updated_at DESC)",
 )
@@ -282,6 +298,7 @@ LEGACY_TABLE_MAPPINGS = (
     ("assets", TABLE_BIZ_ASSET),
     ("tasks", TABLE_BIZ_TASK),
     ("tool_results", TABLE_BIZ_TOOL_RESULT),
+    ("route_decisions", TABLE_BIZ_ROUTE_DECISION),
     ("request_traces", TABLE_SYS_REQUEST_TRACE),
     ("sys_request_traces", TABLE_SYS_REQUEST_TRACE),
 )
@@ -721,7 +738,7 @@ def _upsert_schema_version(connection: sqlite3.Connection) -> None:
         """,
         (
             SCHEMA_VERSION,
-            "Add stage-2 minimal RBAC tables and seeds.",
+            "Add stage-2 async task prelude support.",
         ),
     )
 
@@ -878,6 +895,7 @@ def _seed_default_auth_model(connection: sqlite3.Connection) -> None:
         ("auth_perm_asset_upload", "asset.upload", "上传资产", "允许上传文件并写入资产记录。"),
         ("auth_perm_session_read", "session.read", "读取会话", "允许查询会话、消息与会话资产。"),
         ("auth_perm_task_read", "task.read", "读取任务", "允许查询任务与工具结果。"),
+        ("auth_perm_task_submit", "task.submit", "提交异步任务", "允许提交异步任务。"),
         ("auth_perm_trace_read", "trace.read", "读取追踪", "允许查询 trace 数据。"),
         ("auth_perm_alert_read", "alert.read", "读取告警", "允许查询告警数据。"),
         ("auth_perm_tool_read", "tool.read", "读取工具", "允许查询可用工具列表。"),
@@ -904,6 +922,7 @@ def _seed_default_auth_model(connection: sqlite3.Connection) -> None:
         ("operator", "tool.execute"),
         ("operator", "session.read"),
         ("operator", "task.read"),
+        ("operator", "task.submit"),
         ("operator", "trace.read"),
         ("operator", "alert.read"),
         ("operator", "tool.read"),
@@ -916,6 +935,7 @@ def _seed_default_auth_model(connection: sqlite3.Connection) -> None:
         ("admin", "tool.execute"),
         ("admin", "session.read"),
         ("admin", "task.read"),
+        ("admin", "task.submit"),
         ("admin", "trace.read"),
         ("admin", "alert.read"),
         ("admin", "tool.read"),

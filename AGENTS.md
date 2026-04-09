@@ -3,9 +3,9 @@
 ## 项目定位
 
 - 这是一个基于 Python、LangGraph 和 OpenAI 兼容协议的 Agent 底座项目
-- 阶段 1 已完成，阶段 2 正在开发，当前进度约 `85%`
-- 当前重点是治理底座、多 Agent 编排、运行时配置中心、数据库规范和可排障能力
-- 当前已支持 CLI 和 API 的流式对话输出
+- 阶段 1 已完成，阶段 2 正在开发
+- 当前重点是治理底座、多 Agent 编排、运行时配置中心、数据库规范、可排障能力、请求路由中台和异步任务预留
+- 当前已支持 CLI 与 API 的流式对话输出
 
 ## 结构约束
 
@@ -14,6 +14,7 @@
 - 多媒体解析放在 `app/infrastructure/media/`
 - 上传与存储放在 `app/infrastructure/storage/`
 - 工具能力放在 `app/infrastructure/tools/`
+- 异步任务与队列预留放在 `app/infrastructure/queue/`
 - API 能力放在 `app/presentation/api/`
 - workflow 策略相关代码放在 `app/workflow/`
 - 测试按 `tests/unit`、`tests/integration`、`tests/e2e` 分层
@@ -46,11 +47,19 @@
 - 每累计 3 次代码或结构改动，更新一次 `README.md` 和 `AGENTS.md`
 - 如果改动显著影响结构、接口、运行方式、测试方式或目录布局，则立即更新
 
+## 提示词资产归档规则
+
+- 对项目有长期价值的提示词、任务描述、架构要求或实现约束，需要归档到 `docs/ai-prompts/`
+- 归档内容应具备可检索性，不要使用无语义文件名
+- 归档方向建议按 `frontend / backend / architecture / product` 分类
+
 ## 当前阶段重点
 
 - 阶段 2 已落地：
+  - 请求路由中台最小版：`request_route_service`
+  - 路由决策持久化、查询与统计
   - 统一鉴权
-  - 最小 RBAC 授权
+  - 最小 RBAC
   - 限流与幂等
   - trace service
   - 恢复告警记录、查询与 trace 关联查询
@@ -62,10 +71,12 @@
   - 正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
   - 可切换执行协议：`delegated / standard`
   - 流式对话输出：CLI 流式打印，API `SSE` 流式返回
+  - 异步任务预留：`/tasks/submit` + 本地后台执行器 + `queued/running/completed/failed` 状态链
 - 阶段 2 后续继续建设：
   - 失败恢复增强
   - 策略中心深化
   - 多 Agent 角色协议扩展
+  - 异步任务体系深化
 - 阶段 3 规划：
   - 可视化 trace
   - 观测与监控面板

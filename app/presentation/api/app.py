@@ -20,19 +20,24 @@ import json
 
 from app.application.agent_service import create_initial_state, parse_input_assets
 from app.application.services.alert_service import AlertService
+from app.application.services.async_task_service import AsyncTaskService
 from app.application.services.chat_service import ChatService
 from app.application.services.config_service import RuntimeConfigService
+from app.application.services.request_route_service import RequestRouteService
 from app.application.services.session_service import SessionService
 from app.application.services.task_service import TaskService
 from app.application.services.workflow_role_service import WorkflowRoleService
 from app.application.upload_service import create_uploaded_asset
 from app.config import (
+    get_async_task_workers,
     get_upload_download_dir,
+    is_async_task_enabled,
 )
 from app.domain.errors import AgentError, ParsingError, ValidationError
 from app.infrastructure.auth import AuthService
 from app.infrastructure.llm.client import LLMCallError, sanitize_text
 from app.infrastructure.logger import get_logger
+from app.infrastructure.queue import BackgroundTaskRunner
 from app.infrastructure.tools.registry import build_default_tool_registry
 from app.infrastructure.trace import TraceService
 from app.presentation.api.middleware.auth import AuthMiddleware
@@ -47,6 +52,8 @@ from app.presentation.api.schemas import (
     AuthSubjectRoleAssignRequest,
     AuthSubjectRoleAssignResponse,
     AuthSubjectRolePayload,
+    AsyncTaskSubmitRequest,
+    AsyncTaskSubmitResponse,
     AnalyzeAssetRequest,
     AnalyzeAssetResponse,
     AlertEventListResponse,
@@ -61,10 +68,17 @@ from app.presentation.api.schemas import (
     HealthResponse,
     RecoveryConfigPayload,
     RecoveryConfigResponse,
+    RouteDecisionListResponse,
+    RouteDecisionStatPayload,
+    RouteDecisionStatsResponse,
     RuntimeConfigItemPayload,
     RuntimeConfigListResponse,
     RuntimeConfigUpsertRequest,
     RuntimeConfigUpsertResponse,
+    RoutingConfigPayload,
+    RoutingConfigResponse,
+    RoutingDecisionRulePayload,
+    RoutingRulePayload,
     SessionListResponse,
     SecurityConfigPayload,
     SecurityConfigResponse,
@@ -111,8 +125,15 @@ def create_app():
     chat_service = ChatService()
     auth_service = AuthService()
     trace_service = TraceService()
+    request_route_service = RequestRouteService()
     graph = build_graph()
     app = FastAPI(title="Agent Base Runtime API", version="0.7.0")
+    async_task_service = AsyncTaskService(
+        runner=BackgroundTaskRunner(max_workers=get_async_task_workers()),
+        chat_service=chat_service,
+        session_service=session_service,
+        trace_service=trace_service,
+    )
     app.add_middleware(TraceMiddleware, trace_service=trace_service)
     app.add_middleware(GovernanceMiddleware, rate_limiter=RateLimiter(), idempotency_store=IdempotencyStore())
     app.add_middleware(AuthMiddleware, auth_service=auth_service)
@@ -132,11 +153,20 @@ def create_app():
         trace_id: str,
     ) -> tuple[dict[str, object], list[dict[str, object]], str]:
         task_service.tool_registry = current_tool_registry()
+        route_decision = request_route_service.decide(
+            user_input=user_input,
+            input_assets=input_assets,  # type: ignore[arg-type]
+            message_count=1,
+            route_source="request_entry",
+        )
         preview_state = task_service.prepare_turn_state(
             create_initial_state(user_id="preview-user"),
             user_input,
             input_assets,  # type: ignore[arg-type]
             trace_id=trace_id,
+            route_name=route_decision["route_name"],
+            route_reason=route_decision["route_reason"],
+            route_source=route_decision["route_source"],
         )
         preview_state = tool_node(preview_state)
         return preview_state, preview_state["tool_results"], preview_state["task_state"]
@@ -273,11 +303,20 @@ def create_app():
             normalized_user_input, input_assets = parse_input_assets(user_input)
             task_service.tool_registry = current_tool_registry()
             state = session_service.ensure_session(session_id or None, user_name=user_name, title=session_title)
+            route_decision = request_route_service.decide(
+                user_input=normalized_user_input,
+                input_assets=input_assets,
+                message_count=len(state["messages"]) + 1,
+                route_source="request_entry",
+            )
             current_state = task_service.prepare_turn_state(
                 state,
                 normalized_user_input,
                 input_assets,
                 trace_id=request.state.trace_id,
+                route_name=route_decision["route_name"],
+                route_reason=route_decision["route_reason"],
+                route_source=route_decision["route_source"],
             )
             result = graph.invoke(current_state)
             session_service.persist_turn(result)
@@ -328,6 +367,48 @@ def create_app():
             raise unexpected from error
 
     @app.post(
+        "/tasks/submit",
+        response_model=AsyncTaskSubmitResponse,
+        responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
+    )
+    def submit_task(payload: AsyncTaskSubmitRequest, request: Request) -> AsyncTaskSubmitResponse:
+        require_permission(request, "task.submit")
+        if not is_async_task_enabled():
+            raise ValidationError("当前环境未启用异步任务提交能力。")
+
+        user_input = sanitize_text(payload.message)
+        session_id = sanitize_text(payload.session_id or "")
+        user_name = sanitize_text(payload.user_name) or "api-user"
+        session_title = sanitize_text(payload.session_title) or "Async Task Session"
+        if not user_input:
+            raise ValidationError("message 不能为空。")
+
+        normalized_user_input, input_assets = parse_input_assets(user_input)
+        task_service.tool_registry = current_tool_registry()
+        state = session_service.ensure_session(session_id or None, user_name=user_name, title=session_title)
+        current_state = task_service.prepare_turn_state(
+            state,
+            normalized_user_input,
+            input_assets,
+            trace_id=request.state.trace_id,
+        )
+        async_task_service.submit_turn(current_state)
+        trace_service.attach_execution_context(
+            current_state["trace_id"],
+            session_id=current_state["session_id"],
+            turn_id=current_state["turn_id"],
+            task_id=current_state["task_id"],
+        )
+        return AsyncTaskSubmitResponse(
+            session_id=current_state["session_id"],
+            turn_id=current_state["turn_id"],
+            task_id=current_state["task_id"],
+            trace_id=current_state["trace_id"],
+            status="queued",
+            message="异步任务已提交，等待后台执行。",
+        )
+
+    @app.post(
         "/chat/stream",
         responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
     )
@@ -343,11 +424,20 @@ def create_app():
         normalized_user_input, input_assets = parse_input_assets(user_input)
         task_service.tool_registry = current_tool_registry()
         state = session_service.ensure_session(session_id or None, user_name=user_name, title=session_title)
+        route_decision = request_route_service.decide(
+            user_input=normalized_user_input,
+            input_assets=input_assets,
+            message_count=len(state["messages"]) + 1,
+            route_source="request_entry",
+        )
         current_state = task_service.prepare_turn_state(
             state,
             normalized_user_input,
             input_assets,
             trace_id=request.state.trace_id,
+            route_name=route_decision["route_name"],
+            route_reason=route_decision["route_reason"],
+            route_source=route_decision["route_source"],
         )
 
         def encode_event(event_name: str, payload_dict: dict[str, object]) -> str:
@@ -576,6 +666,53 @@ def create_app():
             )
         )
 
+    @app.get("/routing/config", response_model=RoutingConfigResponse)
+    def get_routing_config(request: Request) -> RoutingConfigResponse:
+        require_permission(request, "config.read")
+        effective_routing = config_service.get_effective_routing_config()
+        return RoutingConfigResponse(
+            routing=RoutingConfigPayload(
+                image_route=RoutingRulePayload(
+                    route_name=effective_routing["image_route_name"],
+                    route_reason=effective_routing["image_route_reason"],
+                ),
+                audio_route=RoutingRulePayload(
+                    route_name=effective_routing["audio_route_name"],
+                    route_reason=effective_routing["audio_route_reason"],
+                ),
+                video_route=RoutingRulePayload(
+                    route_name=effective_routing["video_route_name"],
+                    route_reason=effective_routing["video_route_reason"],
+                ),
+                file_route=RoutingRulePayload(
+                    route_name=effective_routing["file_route_name"],
+                    route_reason=effective_routing["file_route_reason"],
+                ),
+                tool_augmented_route=RoutingRulePayload(
+                    route_name=effective_routing["tool_augmented_route_name"],
+                    route_reason=effective_routing["tool_augmented_route_reason"],
+                ),
+                deliberation_route=RoutingDecisionRulePayload(
+                    route_name=effective_routing["deliberation_route_name"],
+                    route_reason=effective_routing["deliberation_route_reason"],
+                    enabled=effective_routing["deliberation_enabled"],
+                    keywords=effective_routing["deliberation_keywords"],
+                    message_threshold=0,
+                ),
+                contextual_route=RoutingDecisionRulePayload(
+                    route_name=effective_routing["contextual_route_name"],
+                    route_reason=effective_routing["contextual_route_reason"],
+                    enabled=effective_routing["contextual_message_threshold"] > 0,
+                    keywords=[],
+                    message_threshold=effective_routing["contextual_message_threshold"],
+                ),
+                default_route=RoutingRulePayload(
+                    route_name=effective_routing["default_route_name"],
+                    route_reason=effective_routing["default_route_reason"],
+                ),
+            )
+        )
+
     @app.get("/config/runtime", response_model=RuntimeConfigListResponse)
     def list_runtime_configs(request: Request, scope: str | None = None) -> RuntimeConfigListResponse:
         require_permission(request, "config.read")
@@ -675,6 +812,62 @@ def create_app():
             raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
         return TaskResponse(**task)
 
+    @app.get("/tasks/{task_id}/routes", response_model=RouteDecisionListResponse, responses={404: {"model": ErrorResponse}})
+    def get_task_routes(task_id: str, request: Request) -> RouteDecisionListResponse:
+        require_permission(request, "task.read")
+        task = session_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
+        return RouteDecisionListResponse(route_decisions=task["route_decisions"])
+
+    @app.get("/routes", response_model=RouteDecisionListResponse)
+    def list_route_decisions(
+        request: Request,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        trace_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> RouteDecisionListResponse:
+        require_permission(request, "task.read")
+        decisions = session_service.list_route_decisions(
+            task_id=sanitize_text(task_id or "") or None,
+            session_id=sanitize_text(session_id or "") or None,
+            trace_id=sanitize_text(trace_id or "") or None,
+            limit=max(1, min(limit, 100)),
+            offset=max(0, offset),
+        )
+        return RouteDecisionListResponse(route_decisions=decisions)
+
+    @app.get("/routes/stats", response_model=RouteDecisionStatsResponse)
+    def list_route_decision_stats(
+        request: Request,
+        session_id: str | None = None,
+        trace_id: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> RouteDecisionStatsResponse:
+        require_permission(request, "task.read")
+        stats = session_service.list_route_decision_stats(
+            session_id=sanitize_text(session_id or "") or None,
+            trace_id=sanitize_text(trace_id or "") or None,
+            limit=max(1, min(limit, 100)),
+            offset=max(0, offset),
+        )
+        return RouteDecisionStatsResponse(
+            stats=[
+                RouteDecisionStatPayload(
+                    route_name=item["route_name"],
+                    route_source=item["route_source"],
+                    decision_count=item["decision_count"],
+                    last_trace_id=item["last_trace_id"],
+                    last_task_id=item["last_task_id"],
+                    last_decided_at=item["last_decided_at"],
+                )
+                for item in stats
+            ]
+        )
+
     @app.get("/traces/{trace_id}", response_model=TraceResponse, responses={404: {"model": ErrorResponse}})
     def get_trace(trace_id: str, request: Request) -> TraceResponse:
         require_permission(request, "trace.read")
@@ -772,6 +965,12 @@ def create_app():
         if not raw_input:
             raise ValidationError("input 不能为空。")
         normalized_user_input, input_assets = parse_input_assets(raw_input)
+        route_decision = request_route_service.decide(
+            user_input=normalized_user_input,
+            input_assets=input_assets,
+            message_count=1,
+            route_source="request_entry",
+        )
         tool_results: list[dict[str, object]] = []
         task_state = ""
         if payload.run_tools:
@@ -779,6 +978,8 @@ def create_app():
 
         return AnalyzeAssetResponse(
             user_input=normalized_user_input,
+            route_name=route_decision["route_name"],
+            route_reason=route_decision["route_reason"],
             input_assets=input_assets,
             tool_results=tool_results,
             task_state=task_state,
@@ -814,11 +1015,20 @@ def create_app():
             title=sanitize_text(session_title) or "Upload Session",
         )
         task_service.tool_registry = current_tool_registry()
+        route_decision = request_route_service.decide(
+            user_input=normalized_user_input,
+            input_assets=input_assets,
+            message_count=len(state["messages"]) + 1,
+            route_source="request_entry",
+        )
         current_state = task_service.prepare_turn_state(
             state,
             normalized_user_input,
             input_assets,
             trace_id=request.state.trace_id,
+            route_name=route_decision["route_name"],
+            route_reason=route_decision["route_reason"],
+            route_source=route_decision["route_source"],
         )
         if run_tools:
             current_state = tool_node(current_state)
@@ -839,6 +1049,8 @@ def create_app():
             saved_path=saved_path,
             inferred_kind=inferred_kind,
             user_input=normalized_user_input,
+            route_name=current_state["route_name"],
+            route_reason=current_state["route_reason"],
             input_assets=current_state["input_assets"],
             tool_results=current_state["tool_results"],
             task_state=current_state["task_state"],
