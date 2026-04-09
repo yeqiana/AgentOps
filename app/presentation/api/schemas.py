@@ -593,3 +593,13 @@ class AuthSubjectAccessResponse(BaseModel):
     roles: list[str]
     permissions: list[str]
     assignments: list[AuthSubjectRolePayload]
+
+
+class AuthRolePermissionMatrixItemPayload(BaseModel):
+    role_key: str
+    role_name: str
+    permissions: list[str]
+
+
+class AuthPermissionMatrixResponse(BaseModel):
+    matrix: list[AuthRolePermissionMatrixItemPayload]

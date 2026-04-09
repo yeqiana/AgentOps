@@ -1148,6 +1148,14 @@ class ApiHttpTests(unittest.TestCase):
         self.assertGreaterEqual(len(roles_payload["roles"]), 3)
         self.assertGreaterEqual(len(roles_payload["permissions"]), 10)
 
+        matrix_response = client.get("/auth/permissions/matrix", headers=admin_headers)
+        self.assertEqual(matrix_response.status_code, 200)
+        matrix_payload = matrix_response.json()["matrix"]
+        self.assertGreaterEqual(len(matrix_payload), 3)
+        matrix_map = {item["role_key"]: item for item in matrix_payload}
+        self.assertIn("viewer", matrix_map)
+        self.assertIn("task.read", matrix_map["viewer"]["permissions"])
+
         assign_response = client.put(
             "/auth/subjects/apikey:viewer-k/roles",
             headers=admin_headers,
