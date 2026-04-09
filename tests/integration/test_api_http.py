@@ -16,6 +16,7 @@ Why this is done this way:
 from __future__ import annotations
 
 import base64
+import json
 import os
 import tempfile
 import unittest
@@ -417,6 +418,34 @@ class ApiHttpTests(unittest.TestCase):
         tasks_payload = tasks_response.json()
         self.assertGreaterEqual(len(tasks_payload["tasks"]), 1)
         self.assertEqual(tasks_payload["tasks"][0]["task"]["status"], "completed")
+
+    def test_chat_stream_endpoint_returns_sse_events_and_persists_task(self) -> None:
+        with self.client.stream(
+            "POST",
+            "/chat/stream",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "stream-user",
+                "session_title": "Stream Session",
+            },
+        ) as response:
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["content-type"].split(";")[0], "text/event-stream")
+            body = "".join(response.iter_text())
+
+        self.assertIn("event: metadata", body)
+        self.assertIn("event: answer_delta", body)
+        self.assertIn("event: done", body)
+
+        metadata_line = next(line for line in body.splitlines() if line.startswith("data: {") and '"task_id"' in line)
+        metadata = json.loads(metadata_line[len("data: ") :])
+        self.assertIn("execution_mode", metadata)
+        self.assertIn("protocol_summary", metadata)
+
+        task_response = self.client.get(f"/tasks/{metadata['task_id']}")
+        self.assertEqual(task_response.status_code, 200)
+        task_payload = task_response.json()
+        self.assertEqual(task_payload["task"]["id"], metadata["task_id"])
 
     def test_task_not_found_returns_structured_error(self) -> None:
         response = self.client.get("/tasks/task_not_exist")

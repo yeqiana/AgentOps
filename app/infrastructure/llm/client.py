@@ -7,7 +7,7 @@ What this is:
 What it does:
 - Loads provider configuration.
 - Builds an OpenAI-compatible client.
-- Exposes a stable `call_llm` entrypoint.
+- Exposes stable `call_llm` and `stream_llm` entrypoints.
 - Supports image multimodal input blocks when image assets are available.
 - Applies retry, circuit-breaker, alerting, and optional degradation strategy.
 
@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Iterator
 
 from dotenv import load_dotenv
 from openai import (
@@ -60,7 +61,7 @@ class LLMCallError(ModelError):
     - The stable model-layer error exposed to upper layers.
 
     What it does:
-    - Wraps SDK and provider failures into a repository-level domain error.
+    - Wraps SDK and provider failures into a domain error.
 
     Why this is done this way:
     - API handlers and workflow nodes should not depend on third-party SDK
@@ -222,6 +223,65 @@ def _get_recovery_config() -> dict[str, object]:
     return RuntimeConfigService().get_effective_recovery_config()
 
 
+def _build_stream_open_error(settings: LLMSettings, error: Exception, trace_id: str | None) -> LLMCallError:
+    if isinstance(error, RateLimitError):
+        return LLMCallError(
+            _build_error_message("模型流式调用触发 429，通常表示额度不足、未开通计费或限流。", settings.provider, settings.model, error),
+            trace_id=trace_id,
+            details={"retryable": "true"},
+        )
+    if isinstance(error, AuthenticationError):
+        return LLMCallError(
+            _build_error_message("模型流式认证失败。请检查 API Key、Base URL 和模型配置。", settings.provider, settings.model, error),
+            trace_id=trace_id,
+            details={"retryable": "false"},
+        )
+    if isinstance(error, BadRequestError):
+        return LLMCallError(
+            _build_error_message("模型流式请求参数错误。请检查模型名、输入内容和多模态请求格式。", settings.provider, settings.model, error),
+            trace_id=trace_id,
+            details={"retryable": "false"},
+        )
+    if isinstance(error, APIConnectionError):
+        return LLMCallError(
+            _build_error_message("模型流式网络连接失败。请检查当前网络和代理配置。", settings.provider, settings.model, error),
+            trace_id=trace_id,
+            details={"retryable": "true"},
+        )
+    if isinstance(error, APIStatusError):
+        retryable = error.status_code >= 500
+        return LLMCallError(
+            _build_error_message(f"模型流式服务返回 HTTP {error.status_code}。", settings.provider, settings.model, error),
+            trace_id=trace_id,
+            details={"retryable": "true" if retryable else "false"},
+        )
+    if isinstance(error, LLMCallError):
+        return error
+    logger.exception("模型流式调用发生未预期异常")
+    return LLMCallError(
+        _build_error_message("模型流式调用发生未预期异常。", settings.provider, settings.model, error),
+        trace_id=trace_id,
+        details={"retryable": "false"},
+    )
+
+
+def _open_completion_stream(
+    settings: LLMSettings,
+    *,
+    message_content: str | list[dict[str, object]],
+    trace_id: str | None,
+):
+    client = get_llm_client()
+    try:
+        return client.chat.completions.create(
+            model=settings.model,
+            messages=[{"role": "user", "content": message_content}],
+            stream=True,
+        )
+    except Exception as error:
+        raise _build_stream_open_error(settings, error, trace_id) from error
+
+
 def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id: str | None = None) -> str:
     settings = get_llm_settings()
     cleaned_prompt = sanitize_text(prompt)
@@ -261,15 +321,6 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
                 )
                 return _build_mock_response(cleaned_prompt, input_assets, degraded=True)
 
-            emit_recovery_alert(
-                trace_id=trace_id or "none",
-                source_type="llm",
-                source_name=f"{settings.provider}:{settings.model}",
-                severity="warning",
-                event_code="llm_circuit_open_fast_fail",
-                message="模型熔断已开启，本次请求进入快速失败。",
-                payload={"provider": settings.provider, "model": settings.model},
-            )
             degraded_error = LLMCallError(
                 f"模型熔断已开启，暂时拒绝调用。当前模型：`{settings.provider}` / `{settings.model}`。",
                 trace_id=trace_id,
@@ -398,3 +449,131 @@ def call_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id
     content = sanitize_text(response.choices[0].message.content or "")
     logger.info("模型调用成功 trace_id=%s", trace_id or "none")
     return content
+
+
+def stream_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_id: str | None = None) -> Iterator[str]:
+    """
+    What this is:
+    - The streaming model entrypoint for user-facing answer generation.
+
+    What it does:
+    - Yields incremental answer chunks from a provider that supports streaming.
+    - Falls back to chunked mock output when the provider is `mock`.
+
+    Why this is done this way:
+    - User-facing chat should stream text fragments instead of waiting for the
+      full answer buffer, while upper layers still keep one stable model API.
+    """
+
+    settings = get_llm_settings()
+    cleaned_prompt = sanitize_text(prompt)
+    message_content = _build_message_content(cleaned_prompt, input_assets)
+
+    def _yield_mock_chunks(response_text: str) -> Iterator[str]:
+        step = 16
+        for index in range(0, len(response_text), step):
+            yield response_text[index : index + step]
+
+    logger.info(
+        "开始流式调用模型 provider=%s model=%s trace_id=%s",
+        settings.provider,
+        settings.model,
+        trace_id or "none",
+    )
+
+    if settings.provider == "mock":
+        yield from _yield_mock_chunks(_build_mock_response(cleaned_prompt, input_assets, degraded=False))
+        return
+
+    recovery_config = _get_recovery_config()
+    llm_degrade_to_mock = bool(recovery_config["llm_degrade_to_mock"])
+    breaker = None
+
+    if is_llm_circuit_enabled():
+        breaker = get_circuit_breaker(
+            f"llm:{settings.provider}:{settings.model}",
+            failure_threshold=get_llm_circuit_failure_threshold(),
+            recovery_seconds=get_llm_circuit_recovery_seconds(),
+        )
+        if not breaker.allow_request():
+            if llm_degrade_to_mock:
+                emit_recovery_alert(
+                    trace_id=trace_id or "none",
+                    source_type="llm",
+                    source_name=f"{settings.provider}:{settings.model}",
+                    severity="warning",
+                    event_code="llm_degraded_to_mock",
+                    message="模型熔断开启后已降级到 mock 流式响应。",
+                    payload={"provider": settings.provider, "model": settings.model},
+                )
+                yield from _yield_mock_chunks(_build_mock_response(cleaned_prompt, input_assets, degraded=True))
+                return
+
+            error = LLMCallError(
+                f"模型熔断已开启，暂时拒绝调用。当前模型：`{settings.provider}` / `{settings.model}`。",
+                trace_id=trace_id,
+                details={"retryable": "false", "degraded": "true", "degrade_mode": "fast_fail"},
+            )
+            error.code = "llm_circuit_open"
+            raise error
+
+    def _should_retry(error: Exception) -> bool:
+        return isinstance(error, LLMCallError) and error.details.get("retryable") == "true"
+
+    try:
+        if is_llm_retry_enabled():
+            response_stream = execute_with_retry(
+                lambda: _open_completion_stream(settings, message_content=message_content, trace_id=trace_id),
+                attempts=get_llm_retry_attempts(),
+                backoff_ms=get_llm_retry_backoff_ms(),
+                should_retry=_should_retry,
+            )
+        else:
+            response_stream = _open_completion_stream(settings, message_content=message_content, trace_id=trace_id)
+    except LLMCallError as error:
+        if breaker is not None and error.details.get("retryable") == "true":
+            breaker.record_failure()
+        if llm_degrade_to_mock and error.details.get("retryable") == "true":
+            emit_recovery_alert(
+                trace_id=trace_id or "none",
+                source_type="llm",
+                source_name=f"{settings.provider}:{settings.model}",
+                severity="warning",
+                event_code="llm_degraded_to_mock",
+                message="模型流式失败后已降级到 mock 响应。",
+                payload={"provider": settings.provider, "model": settings.model},
+            )
+            yield from _yield_mock_chunks(_build_mock_response(cleaned_prompt, input_assets, degraded=True))
+            return
+        raise
+
+    try:
+        for chunk in response_stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if not delta:
+                continue
+            if isinstance(delta, list):
+                for part in delta:
+                    if isinstance(part, dict):
+                        text = sanitize_text(part.get("text", ""))
+                    else:
+                        text = sanitize_text(str(part))
+                    if text:
+                        yield text
+            else:
+                text = sanitize_text(delta)
+                if text:
+                    yield text
+    except Exception as error:
+        if breaker is not None:
+            breaker.record_failure()
+        raise LLMCallError(
+            _build_error_message("模型流式输出中断。", settings.provider, settings.model, error),
+            trace_id=trace_id,
+            details={"retryable": "false"},
+        ) from error
+    else:
+        if breaker is not None:
+            breaker.record_success()

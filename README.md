@@ -4,15 +4,18 @@
 
 当前状态：
 - 阶段 1 已完成
-- 阶段 2 开发中
+- 阶段 2 开发中，当前进度约 `75% - 80%`
 - 已支持 CLI、HTTP API、多模态输入、工具调用、任务追踪、运行时配置中心和最小多 Agent 编排
+- 已支持 CLI 和 HTTP API 的流式对话输出
 - 阶段 2 已补齐正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
 - 阶段 2 已支持可切换执行协议：`delegated / standard`
 
 ## 核心能力
 
 - 持续对话 CLI
+- CLI 流式回答输出
 - HTTP API
+- HTTP SSE 流式对话
 - 多模型接入
 - 图片、音频、视频、文件输入与上传
 - OCR / ASR / 视频探测 / 抽帧 / 抽音轨
@@ -75,6 +78,7 @@ docs/
 
 - `GET /health`
 - `POST /chat`
+- `POST /chat/stream`
 - `GET /sessions`
 - `GET /sessions/{session_id}`
 - `GET /sessions/{session_id}/assets`
