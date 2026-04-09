@@ -270,6 +270,21 @@ class TaskListResponse(BaseModel):
     tasks: list[TaskResponse]
 
 
+class TaskStatusStatPayload(BaseModel):
+    status: str
+    task_count: int
+    last_updated_at: str = ""
+
+
+class TaskStatsPayload(BaseModel):
+    session_id: str | None = None
+    stats: list[TaskStatusStatPayload] = Field(default_factory=list)
+
+
+class TaskStatsResponse(BaseModel):
+    summary: TaskStatsPayload
+
+
 class TaskSummaryPayload(BaseModel):
     task: TaskPayload
     trace: TracePayload | None = None
