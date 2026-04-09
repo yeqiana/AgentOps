@@ -2,13 +2,13 @@
 Async task orchestration service.
 
 What this is:
-- The stage-2 minimal async submission service.
+- The stage-2 minimal async submission and retry service.
 
 What it does:
 - Accepts prepared chat turn state.
 - Persists queued and running task states.
 - Executes the existing chat workflow in a background thread.
-- Persists completed or failed results using the same session service as sync calls.
+- Supports canceling queued tasks and retrying failed or canceled tasks.
 
 Why this is done this way:
 - Stage 2 needs a real async task boundary without introducing a full queue
@@ -20,9 +20,10 @@ Why this is done this way:
 from __future__ import annotations
 
 from app.application.services.chat_service import ChatService
+from app.application.services.request_route_service import RequestRouteService
 from app.application.services.session_service import SessionService
-from app.domain.errors import AgentError
-from app.domain.errors import ConflictError, ValidationError
+from app.application.services.task_service import TaskService
+from app.domain.errors import AgentError, ConflictError, ValidationError
 from app.infrastructure.llm.client import sanitize_text
 from app.infrastructure.logger import get_logger
 from app.infrastructure.queue import BackgroundTaskRunner
@@ -40,11 +41,15 @@ class AsyncTaskService:
         chat_service: ChatService,
         session_service: SessionService,
         trace_service: TraceService,
+        task_service: TaskService,
+        request_route_service: RequestRouteService,
     ) -> None:
         self.runner = runner
         self.chat_service = chat_service
         self.session_service = session_service
         self.trace_service = trace_service
+        self.task_service = task_service
+        self.request_route_service = request_route_service
 
     def submit_turn(self, state: dict[str, object]) -> None:
         self.session_service.persist_queued_turn(state)  # type: ignore[arg-type]
@@ -83,6 +88,51 @@ class AsyncTaskService:
             updated_by=updated_by,
             message="任务在排队阶段被取消。",
         ) or {}
+
+    def retry_turn(self, task_id: str, *, trace_id: str) -> dict[str, object]:
+        retry_context = self.session_service.build_retry_submission_context(task_id)
+        if not retry_context:
+            raise ValidationError("任务不存在。")
+
+        task = retry_context["task"]
+        if task["status"] not in {"failed", "canceled"}:
+            raise ConflictError("只有失败或已取消的任务才允许重试。")
+        if not retry_context["is_latest_task"]:
+            raise ConflictError("只支持重试当前会话最近一个失败或取消任务。")
+
+        state = retry_context["state"]
+        user_input = retry_context["user_input"]
+        input_assets = retry_context["input_assets"]
+        route_decision = self.request_route_service.decide(
+            user_input=user_input,
+            input_assets=input_assets,
+            message_count=len(state["messages"]) + 1,
+            route_source="retry_entry",
+        )
+        current_state = self.task_service.prepare_turn_state(
+            state,
+            user_input,
+            input_assets,
+            trace_id=trace_id,
+            route_name=route_decision["route_name"],
+            route_reason=route_decision["route_reason"],
+            route_source=route_decision["route_source"],
+        )
+        self.submit_turn(current_state)
+        self.trace_service.attach_execution_context(
+            current_state["trace_id"],
+            session_id=current_state["session_id"],
+            turn_id=current_state["turn_id"],
+            task_id=current_state["task_id"],
+        )
+        return {
+            "session_id": current_state["session_id"],
+            "turn_id": current_state["turn_id"],
+            "task_id": current_state["task_id"],
+            "trace_id": current_state["trace_id"],
+            "status": "queued",
+            "message": "异步任务已重新提交，等待后台执行。",
+        }
 
     def _execute_turn(self, state: dict[str, object]) -> None:
         self.session_service.mark_task_running(state)  # type: ignore[arg-type]

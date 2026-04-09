@@ -143,6 +143,8 @@ def create_app():
         chat_service=chat_service,
         session_service=session_service,
         trace_service=trace_service,
+        task_service=task_service,
+        request_route_service=request_route_service,
     )
     app.add_middleware(TraceMiddleware, trace_service=trace_service)
     app.add_middleware(GovernanceMiddleware, rate_limiter=RateLimiter(), idempotency_store=IdempotencyStore())
@@ -183,6 +185,33 @@ def create_app():
 
     def current_tool_registry():
         return build_default_tool_registry(config_service)
+
+    def prepare_async_state(
+        *,
+        user_input: str,
+        session_id: str,
+        user_name: str,
+        session_title: str,
+        trace_id: str,
+    ) -> dict[str, object]:
+        normalized_user_input, input_assets = parse_input_assets(user_input)
+        task_service.tool_registry = current_tool_registry()
+        state = session_service.ensure_session(session_id or None, user_name=user_name, title=session_title)
+        route_decision = request_route_service.decide(
+            user_input=normalized_user_input,
+            input_assets=input_assets,
+            message_count=len(state["messages"]) + 1,
+            route_source="request_entry",
+        )
+        return task_service.prepare_turn_state(
+            state,
+            normalized_user_input,
+            input_assets,
+            trace_id=trace_id,
+            route_name=route_decision["route_name"],
+            route_reason=route_decision["route_reason"],
+            route_source=route_decision["route_source"],
+        )
 
     def get_auth_profile(request: Request):
         return auth_service.get_authorization_profile(
@@ -384,22 +413,20 @@ def create_app():
     def submit_task(payload: AsyncTaskSubmitRequest, request: Request) -> AsyncTaskSubmitResponse:
         require_permission(request, "task.submit")
         if not is_async_task_enabled():
-            raise ValidationError("当前环境未启用异步任务提交能力。")
+            raise ValidationError("????????????????")
 
         user_input = sanitize_text(payload.message)
         session_id = sanitize_text(payload.session_id or "")
         user_name = sanitize_text(payload.user_name) or "api-user"
         session_title = sanitize_text(payload.session_title) or "Async Task Session"
         if not user_input:
-            raise ValidationError("message 不能为空。")
+            raise ValidationError("message ?????")
 
-        normalized_user_input, input_assets = parse_input_assets(user_input)
-        task_service.tool_registry = current_tool_registry()
-        state = session_service.ensure_session(session_id or None, user_name=user_name, title=session_title)
-        current_state = task_service.prepare_turn_state(
-            state,
-            normalized_user_input,
-            input_assets,
+        current_state = prepare_async_state(
+            user_input=user_input,
+            session_id=session_id,
+            user_name=user_name,
+            session_title=session_title,
             trace_id=request.state.trace_id,
         )
         async_task_service.submit_turn(current_state)
@@ -415,8 +442,24 @@ def create_app():
             task_id=current_state["task_id"],
             trace_id=current_state["trace_id"],
             status="queued",
-            message="异步任务已提交，等待后台执行。",
+            message="???????????????",
         )
+
+    @app.post(
+        "/tasks/{task_id}/retry",
+        response_model=AsyncTaskSubmitResponse,
+        responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
+    )
+    def retry_task(task_id: str, request: Request) -> AsyncTaskSubmitResponse:
+        require_permission(request, "task.submit")
+        if not is_async_task_enabled():
+            raise ValidationError("????????????????")
+
+        retried = async_task_service.retry_turn(
+            sanitize_text(task_id),
+            trace_id=request.state.trace_id,
+        )
+        return AsyncTaskSubmitResponse(**retried)
 
     @app.get("/tasks/runtime", response_model=AsyncTaskRuntimeResponse)
     def get_async_task_runtime(request: Request) -> AsyncTaskRuntimeResponse:

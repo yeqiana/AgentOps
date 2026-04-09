@@ -671,6 +671,21 @@ class SQLiteMessageRepository:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def list_by_turn(self, session_id: str, turn_id: str) -> list[MessageRecord]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, session_id, turn_id, trace_id, role, content,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_BIZ_MESSAGE}
+                WHERE session_id = ? AND turn_id = ?
+                ORDER BY created_at ASC
+                """,
+                (session_id, turn_id),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
 
 class SQLiteAssetRepository:
     def create_many(self, assets: list[AssetRecord]) -> None:
@@ -726,6 +741,22 @@ class SQLiteAssetRepository:
                 ORDER BY created_at ASC
                 """,
                 (session_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_by_turn(self, session_id: str, turn_id: str) -> list[AssetRecord]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, session_id, turn_id, trace_id, kind, name, source,
+                       content, storage_mode, locator, mime_type,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_BIZ_ASSET}
+                WHERE session_id = ? AND turn_id = ?
+                ORDER BY created_at ASC
+                """,
+                (session_id, turn_id),
             ).fetchall()
             return [dict(row) for row in rows]
 

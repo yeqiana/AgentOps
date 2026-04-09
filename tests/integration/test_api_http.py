@@ -706,6 +706,49 @@ class ApiHttpTests(unittest.TestCase):
             self.assertIn("queued", event_types)
             self.assertIn("canceled", event_types)
 
+    def test_async_task_can_be_retried_after_cancel(self) -> None:
+        from fastapi.testclient import TestClient
+
+        def fake_submit(self, task_id: str, fn):
+            future: Future[None] = Future()
+            with self.lock:
+                self.futures[task_id] = future
+            future.add_done_callback(lambda _: self._cleanup(task_id))
+            return future
+
+        with patch("app.presentation.api.app.BackgroundTaskRunner.submit", new=fake_submit):
+            client = TestClient(create_app())
+            submit_response = client.post(
+                "/tasks/submit",
+                json={
+                    "message": "帮我写一句简短的自我介绍",
+                    "user_name": "retry-user",
+                    "session_title": "Retry Session",
+                },
+            )
+            self.assertEqual(submit_response.status_code, 200)
+            payload = submit_response.json()
+
+            cancel_response = client.post(f"/tasks/{payload['task_id']}/cancel")
+            self.assertEqual(cancel_response.status_code, 200)
+
+            retry_response = client.post(f"/tasks/{payload['task_id']}/retry")
+            self.assertEqual(retry_response.status_code, 200)
+            retry_payload = retry_response.json()
+            self.assertEqual(retry_payload["session_id"], payload["session_id"])
+            self.assertEqual(retry_payload["status"], "queued")
+            self.assertNotEqual(retry_payload["task_id"], payload["task_id"])
+
+            retried_task_response = client.get(f"/tasks/{retry_payload['task_id']}")
+            self.assertEqual(retried_task_response.status_code, 200)
+            retried_task = retried_task_response.json()["task"]
+            self.assertEqual(retried_task["status"], "queued")
+
+            retried_events_response = client.get(f"/tasks/{retry_payload['task_id']}/events")
+            self.assertEqual(retried_events_response.status_code, 200)
+            retried_event_types = [item["event_type"] for item in retried_events_response.json()["task_events"]]
+            self.assertIn("queued", retried_event_types)
+
     def test_task_not_found_returns_structured_error(self) -> None:
         response = self.client.get("/tasks/task_not_exist")
         self.assertEqual(response.status_code, 404)
