@@ -84,6 +84,7 @@
   - 会话聚合摘要：`/sessions/{session_id}/summary`
   - 任务事件持久化与查询：`biz_task_event`、`/tasks/{task_id}/events`
   - 任务状态聚合统计：`/tasks/stats`
+  - 控制台聚合总览：`/operations/overview`
 - 阶段 2 后续继续建设：
   - 失败恢复增强
   - 策略中心深化

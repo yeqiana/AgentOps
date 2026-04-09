@@ -1190,3 +1190,48 @@ class ApiHttpTests(unittest.TestCase):
 
         for name in ["APP_AUTH_ENABLED", "APP_RBAC_ENABLED", "APP_API_KEYS", "APP_AUTH_ADMIN_SUBJECTS"]:
             os.environ.pop(name, None)
+
+    def test_operations_overview_endpoint_returns_console_summary(self) -> None:
+        os.environ["APP_AUTH_ENABLED"] = "true"
+        os.environ["APP_RBAC_ENABLED"] = "true"
+        os.environ["APP_API_KEYS"] = "demo-key"
+        os.environ["APP_AUTH_ADMIN_SUBJECTS"] = "apikey:demo-key"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        headers = {"X-API-Key": "demo-key"}
+
+        chat_response = client.post(
+            "/chat",
+            headers=headers,
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "overview-user",
+                "session_title": "Overview Session",
+            },
+        )
+        self.assertEqual(chat_response.status_code, 200)
+        payload = chat_response.json()
+
+        get_alert_service().create_alert(
+            trace_id=payload["trace_id"],
+            source_type="llm",
+            source_name="mock",
+            severity="warning",
+            event_code="overview_test_alert",
+            message="overview integration test",
+            payload={"task_id": payload["task_id"]},
+        )
+
+        overview_response = client.get("/operations/overview", headers=headers)
+        self.assertEqual(overview_response.status_code, 200)
+        summary = overview_response.json()["summary"]
+        self.assertGreaterEqual(len(summary["task_stats"]), 1)
+        self.assertIn("max_workers", summary["runtime"])
+        self.assertGreaterEqual(len(summary["recent_tasks"]), 1)
+        self.assertGreaterEqual(len(summary["route_stats"]), 1)
+        self.assertGreaterEqual(len(summary["recent_alerts"]), 1)
+        self.assertEqual(summary["recent_alerts"][0]["event_code"], "overview_test_alert")
+
+        for name in ["APP_AUTH_ENABLED", "APP_RBAC_ENABLED", "APP_API_KEYS", "APP_AUTH_ADMIN_SUBJECTS"]:
+            os.environ.pop(name, None)
