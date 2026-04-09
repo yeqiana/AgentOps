@@ -45,6 +45,9 @@ class TaskService:
         input_assets: list[InputAsset],
         *,
         trace_id: str | None = None,
+        route_name: str = "",
+        route_reason: str = "",
+        route_source: str = "",
     ) -> AgentState:
         updated_messages = append_user_message(state["messages"], sanitize_text(user_input))
         runtime_context = {**state["runtime_context"], "tools": self.tool_registry.list_tool_names()}
@@ -61,8 +64,9 @@ class TaskService:
             "trace_id": sanitize_text(trace_id or "") or _generate_identifier("trace"),
             "execution_mode": "",
             "protocol_summary": "",
-            "route_name": "",
-            "route_reason": "",
+            "route_name": sanitize_text(route_name),
+            "route_reason": sanitize_text(route_reason),
+            "route_source": sanitize_text(route_source),
             "debate_summary": "",
             "arbitration_summary": "",
             "runtime_context": runtime_context,

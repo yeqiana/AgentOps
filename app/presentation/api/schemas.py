@@ -29,6 +29,22 @@ class ChatRequest(BaseModel):
     session_title: str = Field(default="API Session", description="新建会话标题。")
 
 
+class AsyncTaskSubmitRequest(BaseModel):
+    message: str = Field(min_length=1, description="异步任务对应的用户输入。")
+    session_id: str | None = Field(default=None, description="已有会话 ID，为空时创建新会话。")
+    user_name: str = Field(default="api-user", description="当前请求对应的用户名。")
+    session_title: str = Field(default="Async Task Session", description="新建会话标题。")
+
+
+class AsyncTaskSubmitResponse(BaseModel):
+    session_id: str
+    turn_id: str
+    task_id: str
+    trace_id: str
+    status: str
+    message: str
+
+
 class ChatResponse(BaseModel):
     session_id: str
     turn_id: str
@@ -139,9 +155,65 @@ class ToolResultPayload(BaseModel):
     created_at: str = ""
 
 
+class RouteDecisionPayload(BaseModel):
+    id: str = ""
+    task_id: str = ""
+    session_id: str = ""
+    turn_id: str = ""
+    trace_id: str
+    route_name: str
+    route_reason: str
+    route_source: str
+    created_at: str = ""
+
+
+class RouteDecisionListResponse(BaseModel):
+    route_decisions: list[RouteDecisionPayload] = Field(default_factory=list)
+
+
+class RouteDecisionStatPayload(BaseModel):
+    route_name: str
+    route_source: str
+    decision_count: int
+    last_trace_id: str = ""
+    last_task_id: str = ""
+    last_decided_at: str = ""
+
+
+class RouteDecisionStatsResponse(BaseModel):
+    stats: list[RouteDecisionStatPayload] = Field(default_factory=list)
+
+
+class RoutingRulePayload(BaseModel):
+    route_name: str
+    route_reason: str
+
+
+class RoutingDecisionRulePayload(RoutingRulePayload):
+    enabled: bool = True
+    keywords: list[str] = Field(default_factory=list)
+    message_threshold: int = 0
+
+
+class RoutingConfigPayload(BaseModel):
+    image_route: RoutingRulePayload
+    audio_route: RoutingRulePayload
+    video_route: RoutingRulePayload
+    file_route: RoutingRulePayload
+    tool_augmented_route: RoutingRulePayload
+    deliberation_route: RoutingDecisionRulePayload
+    contextual_route: RoutingDecisionRulePayload
+    default_route: RoutingRulePayload
+
+
+class RoutingConfigResponse(BaseModel):
+    routing: RoutingConfigPayload
+
+
 class TaskResponse(BaseModel):
     task: TaskPayload
     tool_results: list[ToolResultPayload]
+    route_decisions: list[RouteDecisionPayload] = Field(default_factory=list)
 
 
 class TaskListResponse(BaseModel):
@@ -173,6 +245,8 @@ class AnalyzeAssetRequest(BaseModel):
 
 class AnalyzeAssetResponse(BaseModel):
     user_input: str
+    route_name: str = Field(default="", description="请求路由名称。")
+    route_reason: str = Field(default="", description="请求路由原因。")
     input_assets: list[dict[str, object]]
     tool_results: list[ToolResultPayload] = Field(default_factory=list)
     task_state: str = Field(default="", description="工具试跑后的任务状态摘要。")
@@ -188,6 +262,8 @@ class UploadAssetResponse(BaseModel):
     saved_path: str = Field(description="文件实际写入的本地路径。")
     inferred_kind: str = Field(description="系统最终识别出的资产类型。")
     user_input: str = Field(description="本轮上传生成的默认或显式任务指令。")
+    route_name: str = Field(default="", description="请求路由名称。")
+    route_reason: str = Field(default="", description="请求路由原因。")
     input_assets: list[dict[str, object]] = Field(description="标准化后的资产列表。")
     tool_results: list[ToolResultPayload] = Field(default_factory=list, description="工具试跑结果。")
     task_state: str = Field(default="", description="工具试跑后的任务状态摘要。")

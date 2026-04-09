@@ -100,6 +100,8 @@ class PersistenceServiceTests(unittest.TestCase):
         self.assertEqual(task["task"]["review_status"], "approved")
         self.assertEqual(len(task["tool_results"]), 1)
         self.assertEqual(task["tool_results"][0]["tool_name"], "python_echo")
+        self.assertEqual(len(task["route_decisions"]), 1)
+        self.assertEqual(task["route_decisions"][0]["route_name"], "direct_chat")
 
     def test_session_service_persists_failed_task(self) -> None:
         state = self.session_service.create_state(user_name="integration-user", title="Failed Session")
@@ -157,5 +159,7 @@ class PersistenceServiceTests(unittest.TestCase):
         self.assertEqual(task["task"]["review_status"], "needs_attention")
         self.assertEqual(len(task["tool_results"]), 1)
         self.assertEqual(task["tool_results"][0]["tool_name"], "ocr_tesseract")
+        self.assertEqual(len(task["route_decisions"]), 1)
+        self.assertEqual(task["route_decisions"][0]["route_name"], "multimodal_analysis")
         self.assertEqual(len(bundle["messages"]), 1)
         self.assertEqual(bundle["messages"][0]["role"], "user")

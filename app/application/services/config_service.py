@@ -233,6 +233,72 @@ class RuntimeConfigService:
             ),
         }
 
+    def get_effective_routing_config(self) -> dict[str, Any]:
+        overrides = self._load_scope_overrides("routing")
+        return {
+            "video_route_name": self._as_str(overrides.get("video_route_name"), "video_analysis"),
+            "video_route_reason": self._as_str(
+                overrides.get("video_route_reason"),
+                "检测到视频资产，优先走视频分析与后处理增强链。",
+            ),
+            "audio_route_name": self._as_str(overrides.get("audio_route_name"), "audio_analysis"),
+            "audio_route_reason": self._as_str(
+                overrides.get("audio_route_reason"),
+                "检测到音频资产，优先走音频转写与分析链。",
+            ),
+            "file_route_name": self._as_str(overrides.get("file_route_name"), "document_analysis"),
+            "file_route_reason": self._as_str(
+                overrides.get("file_route_reason"),
+                "检测到文档资产，优先走文档解析与总结链。",
+            ),
+            "image_route_name": self._as_str(overrides.get("image_route_name"), "image_analysis"),
+            "image_route_reason": self._as_str(
+                overrides.get("image_route_reason"),
+                "检测到图片资产，优先走图片理解与 OCR 增强链。",
+            ),
+            "tool_augmented_route_name": self._as_str(
+                overrides.get("tool_augmented_route_name"),
+                "tool_augmented_chat",
+            ),
+            "tool_augmented_route_reason": self._as_str(
+                overrides.get("tool_augmented_route_reason"),
+                "检测到已有工具结果，优先结合工具输出完成回答。",
+            ),
+            "deliberation_enabled": self._as_bool(
+                overrides.get("deliberation_enabled"),
+                is_workflow_deliberation_enabled(),
+            ),
+            "deliberation_keywords": self._as_csv(
+                overrides.get("deliberation_keywords"),
+                get_workflow_deliberation_keywords(),
+            ),
+            "deliberation_route_name": self._as_str(
+                overrides.get("deliberation_route_name"),
+                "deliberation_chat",
+            ),
+            "deliberation_route_reason": self._as_str(
+                overrides.get("deliberation_route_reason"),
+                "检测到比较或评审型任务，优先进入更审慎的分析路径。",
+            ),
+            "contextual_message_threshold": self._as_int(
+                overrides.get("contextual_message_threshold"),
+                3,
+            ),
+            "contextual_route_name": self._as_str(
+                overrides.get("contextual_route_name"),
+                "contextual_chat",
+            ),
+            "contextual_route_reason": self._as_str(
+                overrides.get("contextual_route_reason"),
+                "检测到多轮上下文，优先保持连续对话一致性。",
+            ),
+            "default_route_name": self._as_str(overrides.get("default_route_name"), "direct_chat"),
+            "default_route_reason": self._as_str(
+                overrides.get("default_route_reason"),
+                "当前是普通文本任务，优先走标准规划与回答链。",
+            ),
+        }
+
     def _load_scope_overrides(self, scope: str) -> dict[str, str]:
         rows = self.repository.list_configs(scope=scope)
         return {row["config_key"]: row["config_value"] for row in rows}

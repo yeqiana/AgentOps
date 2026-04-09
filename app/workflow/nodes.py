@@ -20,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.application.image_service import create_image_asset_from_reference
+from app.application.services.request_route_service import RequestRouteService
 from app.application.prompt_builder import (
     build_answer_prompt,
     build_arbitration_prompt,
@@ -33,7 +34,7 @@ from app.domain.models import AgentState, InputAsset, Message, ToolExecutionResu
 from app.infrastructure.llm.client import call_llm, sanitize_text
 from app.infrastructure.logger import get_logger
 from app.infrastructure.tools.registry import build_default_tool_registry
-from app.workflow.policies import decide_route, review_answer
+from app.workflow.policies import review_answer
 from app.workflow.registry import build_workflow_policy_registry
 
 
@@ -317,18 +318,19 @@ def router_node(state: AgentState) -> AgentState:
       into multi-graph or multi-agent orchestration.
     """
 
-    route_name, route_reason = decide_route(
-        user_input=state["user_input"],
-        input_assets=state["input_assets"],
-        tool_results=state["tool_results"],
-        message_count=len(state["messages"]),
-        registry=build_workflow_policy_registry(),
+    route_service = RequestRouteService()
+    decision = route_service.decide_for_state(
+        state,
+        route_source="workflow_router",
     )
+    route_name = decision["route_name"]
+    route_reason = decision["route_reason"]
     logger.info("router_node 执行完成 trace_id=%s route=%s", state["trace_id"], route_name)
     return {
         **state,
         "route_name": route_name,
         "route_reason": route_reason,
+        "route_source": decision["route_source"],
     }
 
 

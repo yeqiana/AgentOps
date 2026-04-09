@@ -25,6 +25,7 @@ from app.domain.models import (
     AuthSubjectRoleRecord,
     AssetRecord,
     MessageRecord,
+    RouteDecisionRecord,
     RuntimeConfigRecord,
     SessionRecord,
     TaskRecord,
@@ -36,6 +37,7 @@ from app.domain.models import (
 from app.infrastructure.persistence.database import (
     TABLE_BIZ_ASSET,
     TABLE_BIZ_MESSAGE,
+    TABLE_BIZ_ROUTE_DECISION,
     TABLE_BIZ_SESSION,
     TABLE_BIZ_TASK,
     TABLE_BIZ_TOOL_RESULT,
@@ -939,6 +941,146 @@ class SQLiteToolResultRepository:
                 (task_id,),
             ).fetchall()
             return [{**dict(row), "success": bool(row["success"])} for row in rows]
+
+
+class SQLiteRouteDecisionRepository:
+    def replace_for_task(self, task_id: str, decisions: list[RouteDecisionRecord]) -> None:
+        with get_connection() as connection:
+            connection.execute(f"DELETE FROM {TABLE_BIZ_ROUTE_DECISION} WHERE task_id = ?", (task_id,))
+            if not decisions:
+                return
+            connection.executemany(
+                f"""
+                INSERT INTO {TABLE_BIZ_ROUTE_DECISION} (
+                    id, task_id, session_id, turn_id, trace_id, route_name, route_reason, route_source,
+                    created_by, updated_by, created_at, updated_at,
+                    ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        decision["id"],
+                        decision["task_id"],
+                        decision["session_id"],
+                        decision["turn_id"],
+                        decision["trace_id"],
+                        decision["route_name"],
+                        decision["route_reason"],
+                        decision["route_source"],
+                        decision["created_by"],
+                        decision["updated_by"],
+                        decision["created_at"],
+                        decision["updated_at"],
+                        decision["ext_data1"],
+                        decision["ext_data2"],
+                        decision["ext_data3"],
+                        decision["ext_data4"],
+                        decision["ext_data5"],
+                    )
+                    for decision in decisions
+                ],
+            )
+
+    def list_by_task(self, task_id: str) -> list[RouteDecisionRecord]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, task_id, session_id, turn_id, trace_id, route_name, route_reason, route_source,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_BIZ_ROUTE_DECISION}
+                WHERE task_id = ?
+                ORDER BY created_at ASC
+                """,
+                (task_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_decisions(
+        self,
+        *,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        trace_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[RouteDecisionRecord]:
+        query = f"""
+            SELECT id, task_id, session_id, turn_id, trace_id, route_name, route_reason, route_source,
+                   created_by, updated_by, created_at, updated_at,
+                   ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+            FROM {TABLE_BIZ_ROUTE_DECISION}
+        """
+        clauses: list[str] = []
+        parameters: list[object] = []
+        if task_id:
+            clauses.append("task_id = ?")
+            parameters.append(task_id)
+        if session_id:
+            clauses.append("session_id = ?")
+            parameters.append(session_id)
+        if trace_id:
+            clauses.append("trace_id = ?")
+            parameters.append(trace_id)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        parameters.extend([limit, offset])
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_stats(
+        self,
+        *,
+        session_id: str | None = None,
+        trace_id: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        filters: list[str] = []
+        parameters: list[object] = []
+        if session_id:
+            filters.append("session_id = ?")
+            parameters.append(session_id)
+        if trace_id:
+            filters.append("trace_id = ?")
+            parameters.append(trace_id)
+        where_clause = ""
+        if filters:
+            where_clause = "WHERE " + " AND ".join(filters)
+
+        query = f"""
+            WITH filtered AS (
+                SELECT id, task_id, session_id, trace_id, route_name, route_source, created_at
+                FROM {TABLE_BIZ_ROUTE_DECISION}
+                {where_clause}
+            ),
+            grouped AS (
+                SELECT route_name, route_source, COUNT(*) AS decision_count, MAX(created_at) AS last_decided_at
+                FROM filtered
+                GROUP BY route_name, route_source
+            )
+            SELECT
+                grouped.route_name,
+                grouped.route_source,
+                grouped.decision_count,
+                grouped.last_decided_at,
+                COALESCE(filtered.trace_id, '') AS last_trace_id,
+                COALESCE(filtered.task_id, '') AS last_task_id
+            FROM grouped
+            LEFT JOIN filtered
+                ON filtered.route_name = grouped.route_name
+               AND filtered.route_source = grouped.route_source
+               AND filtered.created_at = grouped.last_decided_at
+            ORDER BY grouped.decision_count DESC, grouped.last_decided_at DESC
+            LIMIT ?
+            OFFSET ?
+        """
+        parameters.extend([limit, offset])
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+            return [dict(row) for row in rows]
 
 
 class SQLiteTraceRepository:
