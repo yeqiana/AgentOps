@@ -215,6 +215,8 @@ class SessionService:
             "trace_id": state["trace_id"],
             "status": status,
             "user_input": state["user_input"],
+            "execution_mode": state["execution_mode"],
+            "protocol_summary": state["protocol_summary"],
             "route_name": state["route_name"],
             "route_reason": state["route_reason"],
             "plan": state["plan"],

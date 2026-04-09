@@ -31,6 +31,7 @@ class DebateRoleDefinition:
 
 @dataclass(frozen=True)
 class WorkflowPolicyRegistry:
+    execution_mode: str
     deliberation_enabled: bool
     deliberation_keywords: list[str]
     support_role: DebateRoleDefinition
@@ -43,6 +44,7 @@ class WorkflowPolicyRegistry:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "execution_mode": self.execution_mode,
             "deliberation_enabled": self.deliberation_enabled,
             "deliberation_keywords": list(self.deliberation_keywords),
             "support_role": asdict(self.support_role),
@@ -86,6 +88,7 @@ def build_workflow_policy_registry(
     role_overrides = runtime_config_service.get_workflow_role_overrides()
     effective_roles = (workflow_role_service or WorkflowRoleService()).get_effective_roles()
     return WorkflowPolicyRegistry(
+        execution_mode=effective_config["execution_mode"],
         deliberation_enabled=effective_config["deliberation_enabled"],
         deliberation_keywords=effective_config["deliberation_keywords"],
         support_role=DebateRoleDefinition(

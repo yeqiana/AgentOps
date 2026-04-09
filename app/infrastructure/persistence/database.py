@@ -29,7 +29,7 @@ from app.domain.errors import PersistenceError
 
 
 DEFAULT_DATABASE_URL = "sqlite:///data/agent.db"
-SCHEMA_VERSION = "2026_04_08_05"
+SCHEMA_VERSION = "2026_04_09_01"
 
 TABLE_SYS_SCHEMA_VERSION = "sys_schema_version"
 TABLE_SYS_USER = "sys_user"
@@ -155,6 +155,8 @@ SCHEMA_STATEMENTS = (
         trace_id TEXT NOT NULL,
         status TEXT NOT NULL,
         user_input TEXT NOT NULL,
+        execution_mode TEXT NOT NULL DEFAULT '',
+        protocol_summary TEXT NOT NULL DEFAULT '',
         route_name TEXT NOT NULL DEFAULT '',
         route_reason TEXT NOT NULL DEFAULT '',
         plan TEXT NOT NULL,
@@ -333,6 +335,8 @@ AUDIT_COLUMN_MIGRATIONS = {
         ("updated_by", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system_migration'"),
         ("created_at", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
         ("updated_at", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+        ("execution_mode", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN execution_mode TEXT NOT NULL DEFAULT ''"),
+        ("protocol_summary", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN protocol_summary TEXT NOT NULL DEFAULT ''"),
         ("ext_data1", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
         ("ext_data2", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
         ("ext_data3", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
@@ -514,7 +518,7 @@ def _migrate_legacy_tables(connection: sqlite3.Connection) -> None:
         target_table=TABLE_BIZ_TASK,
         target_columns=(
             "id", "session_id", "turn_id", "trace_id", "status", "user_input", "route_name",
-            "route_reason", "plan", "debate_summary", "arbitration_summary", "answer",
+            "execution_mode", "protocol_summary", "route_reason", "plan", "debate_summary", "arbitration_summary", "answer",
             "critic_summary", "review_status", "review_summary", "tool_count", "error_message",
             "created_by", "updated_by", "created_at", "updated_at",
             "ext_data1", "ext_data2", "ext_data3", "ext_data4", "ext_data5",
@@ -526,6 +530,8 @@ def _migrate_legacy_tables(connection: sqlite3.Connection) -> None:
             "created_at", "updated_at",
         ),
         computed_values={
+            "execution_mode": empty_text,
+            "protocol_summary": empty_text,
             "created_by": migration_actor,
             "updated_by": migration_actor,
             "ext_data1": empty_text,
@@ -626,7 +632,7 @@ def _upsert_schema_version(connection: sqlite3.Connection) -> None:
         """,
         (
             SCHEMA_VERSION,
-            "Extend stage-2 workflow role protocol with planner, executor, and reviewer roles.",
+            "Add stage-2 switchable execution protocol fields for tasks and workflow queries.",
         ),
     )
 

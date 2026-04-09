@@ -207,6 +207,8 @@ def create_app():
                 turn_id=result["turn_id"],
                 task_id=result["task_id"],
                 trace_id=result["trace_id"],
+                execution_mode=result["execution_mode"],
+                protocol_summary=result["protocol_summary"],
                 route_name=result["route_name"],
                 route_reason=result["route_reason"],
                 plan=result["plan"],
@@ -280,6 +282,7 @@ def create_app():
         registry = build_workflow_policy_registry(config_service, workflow_role_service)
         return WorkflowConfigResponse(
             workflow=WorkflowConfigPayload(
+                execution_mode=registry.execution_mode,
                 deliberation_enabled=registry.deliberation_enabled,
                 deliberation_keywords=registry.deliberation_keywords,
                 support_role=WorkflowRolePayload(

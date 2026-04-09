@@ -5,13 +5,14 @@ What this is:
 - The LangGraph node implementation layer.
 
 What it does:
-- Runs tool selection/execution, planning, and final answering.
+- Runs tool selection/execution, routing, execution-protocol selection,
+  planning, debate, arbitration, answering, critique, and review.
 - Reads state, invokes tools or model calls, and writes results back into state.
 
 Why this is done this way:
 - Nodes should stay thin and orchestration-oriented.
-- Asset parsing, storage, and prompt construction should stay in their own
-  layers so the workflow can evolve without duplicating logic.
+- Asset parsing, storage, and prompt construction stay in their own layers so
+  the workflow can evolve without duplicating logic.
 """
 
 from __future__ import annotations
@@ -61,12 +62,12 @@ def _resolve_local_asset_path(asset: InputAsset) -> str | None:
     - A local file locator helper for tool routing.
 
     What it does:
-    - Returns a resolved local file path only when the asset really points to an
-      existing local file.
+    - Returns a resolved local file path only when the asset really points to
+      an existing local file.
 
     Why this is done this way:
     - OCR, ASR, and video CLI tools currently work on local paths, so URL and
-      object-storage assets must not accidentally be routed into them.
+      object-storage assets must not be routed into them.
     """
 
     local_path = sanitize_text(asset.get("local_path", ""))
@@ -221,10 +222,6 @@ def tool_node(state: AgentState) -> AgentState:
                     }
                 )
 
-        if asset["kind"] != "video" or "video_ffmpeg_frame" not in available_tools:
-            if asset["kind"] != "video":
-                continue
-
         if asset["kind"] == "video" and "video_ffmpeg_frame" in available_tools:
             frame_output_path = _build_video_frame_output_path(state["trace_id"], local_path)
             try:
@@ -335,6 +332,42 @@ def router_node(state: AgentState) -> AgentState:
     }
 
 
+def protocol_node(state: AgentState) -> AgentState:
+    """
+    What this is:
+    - The execution-protocol selection node.
+
+    What it does:
+    - Resolves whether the current turn should run in standard or delegated mode.
+    - Writes a human-readable protocol summary into state for persistence and API queries.
+
+    Why this is done this way:
+    - Stage-2 orchestration should expose not only roles but also the actual
+      execution protocol chosen for each task.
+    """
+
+    registry = build_workflow_policy_registry()
+    execution_mode = registry.execution_mode
+    if execution_mode == "delegated" and state["route_name"] == "deliberation_chat":
+        protocol_summary = "planner -> support/challenge -> arbitration -> executor -> critic -> reviewer"
+    elif execution_mode == "delegated":
+        protocol_summary = "planner -> executor -> critic -> reviewer"
+    else:
+        protocol_summary = "planner -> executor -> reviewer"
+
+    logger.info(
+        "protocol_node 执行完成 trace_id=%s execution_mode=%s protocol=%s",
+        state["trace_id"],
+        execution_mode,
+        protocol_summary,
+    )
+    return {
+        **state,
+        "execution_mode": execution_mode,
+        "protocol_summary": protocol_summary,
+    }
+
+
 def plan_node(state: AgentState) -> AgentState:
     """
     What this is:
@@ -385,6 +418,12 @@ def debate_node(state: AgentState) -> AgentState:
       the runtime can compare perspectives before answering.
     """
 
+    if state["execution_mode"] == "standard":
+        return {
+            **state,
+            "debate_summary": "当前执行协议为 standard，已跳过多 Agent 辩论。",
+        }
+
     if state["route_name"] != "deliberation_chat":
         return {
             **state,
@@ -428,6 +467,12 @@ def arbitration_node(state: AgentState) -> AgentState:
     - Debate alone does not improve answer quality unless the system can turn
       multiple viewpoints into a single execution decision.
     """
+
+    if state["execution_mode"] == "standard":
+        return {
+            **state,
+            "arbitration_summary": "当前执行协议为 standard，已跳过仲裁。",
+        }
 
     if state["route_name"] != "deliberation_chat":
         return {
@@ -497,8 +542,14 @@ def critic_node(state: AgentState) -> AgentState:
 
     Why this is done this way:
     - Multi-agent orchestration starts with explicit role separation. The critic
-      role should be independently queryable before adding debate graphs.
+      role should be independently queryable before adding more complex graphs.
     """
+
+    if state["execution_mode"] == "standard":
+        return {
+            **state,
+            "critic_summary": "当前执行协议为 standard，已跳过批评代理。",
+        }
 
     registry = build_workflow_policy_registry()
     prompt = build_critic_prompt(

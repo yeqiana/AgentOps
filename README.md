@@ -7,6 +7,7 @@
 - 阶段 2 开发中
 - 已支持 CLI、HTTP API、多模态输入、工具调用、任务追踪、运行时配置中心和最小多 Agent 编排
 - 阶段 2 已补齐正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
+- 阶段 2 已支持可切换执行协议：`delegated / standard`
 
 ## 核心能力
 
@@ -24,6 +25,7 @@
 - 配置化恢复策略：LLM 降级到 `mock`、工具 `soft-fail`
 - `router / debate / arbitration / critic / review` 多角色工作流
 - 正式角色协议与角色注册：`support / challenge / planner / executor / arbitration / critic / reviewer`
+- 可切换执行协议：`delegated / standard`
 - 数据库驱动运行时配置中心
 - 数据库驱动角色注册
 
@@ -75,6 +77,9 @@ docs/
 - `POST /chat`
 - `GET /sessions`
 - `GET /sessions/{session_id}`
+- `GET /sessions/{session_id}/assets`
+- `GET /sessions/{session_id}/tasks`
+- `GET /assets/{asset_id}`
 - `GET /tasks`
 - `GET /tasks/{task_id}`
 - `GET /tools`
@@ -124,7 +129,7 @@ docs/
 - [架构文档总索引](docs/architecture/README.md)
 - [架构规划资料](docs/architecture/plans)
 
-如果你要看每次阶段开发内容，直接看 git 历史：
+如需查看每次阶段开发内容，直接查看 git 历史：
 
 ```powershell
 git log --oneline

@@ -24,6 +24,7 @@ from app.config import (
     get_allowed_tools,
     get_workflow_executor_role_instruction,
     get_workflow_executor_role_name,
+    get_workflow_execution_mode,
     get_workflow_planner_role_instruction,
     get_workflow_planner_role_name,
     get_workflow_reviewer_role_instruction,
@@ -92,6 +93,10 @@ class RuntimeConfigService:
     def get_effective_workflow_config(self) -> dict[str, Any]:
         overrides = self._load_scope_overrides("workflow")
         return {
+            "execution_mode": self._as_str(
+                overrides.get("execution_mode"),
+                get_workflow_execution_mode(),
+            ),
             "deliberation_enabled": self._as_bool(
                 overrides.get("deliberation_enabled"),
                 is_workflow_deliberation_enabled(),

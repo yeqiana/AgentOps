@@ -623,18 +623,20 @@ class SQLiteTaskRepository:
             connection.execute(
                 f"""
                 INSERT INTO {TABLE_BIZ_TASK} (
-                    id, session_id, turn_id, trace_id, status, user_input, route_name,
+                    id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
                     route_reason, plan, debate_summary, arbitration_summary, answer,
                     critic_summary, review_status, review_summary, tool_count,
                     error_message, created_by, updated_by, created_at, updated_at,
                     ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     session_id = excluded.session_id,
                     turn_id = excluded.turn_id,
                     trace_id = excluded.trace_id,
                     status = excluded.status,
                     user_input = excluded.user_input,
+                    execution_mode = excluded.execution_mode,
+                    protocol_summary = excluded.protocol_summary,
                     route_name = excluded.route_name,
                     route_reason = excluded.route_reason,
                     plan = excluded.plan,
@@ -661,6 +663,8 @@ class SQLiteTaskRepository:
                     task["trace_id"],
                     task["status"],
                     task["user_input"],
+                    task["execution_mode"],
+                    task["protocol_summary"],
                     task["route_name"],
                     task["route_reason"],
                     task["plan"],
@@ -688,7 +692,7 @@ class SQLiteTaskRepository:
         with get_connection() as connection:
             row = connection.execute(
                 f"""
-                SELECT id, session_id, turn_id, trace_id, status, user_input, route_name,
+                SELECT id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
                        route_reason, plan, debate_summary, arbitration_summary, answer,
                        critic_summary, review_status, review_summary, tool_count, error_message,
                        created_by, updated_by, created_at, updated_at,
@@ -704,7 +708,7 @@ class SQLiteTaskRepository:
         with get_connection() as connection:
             rows = connection.execute(
                 f"""
-                SELECT id, session_id, turn_id, trace_id, status, user_input, route_name,
+                SELECT id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
                        route_reason, plan, debate_summary, arbitration_summary, answer,
                        critic_summary, review_status, review_summary, tool_count, error_message,
                        created_by, updated_by, created_at, updated_at,
@@ -728,7 +732,7 @@ class SQLiteTaskRepository:
         offset: int = 0,
     ) -> list[TaskRecord]:
         query = f"""
-            SELECT id, session_id, turn_id, trace_id, status, user_input, route_name,
+            SELECT id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
                    route_reason, plan, debate_summary, arbitration_summary, answer,
                    critic_summary, review_status, review_summary, tool_count, error_message,
                    created_by, updated_by, created_at, updated_at,

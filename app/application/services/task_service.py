@@ -59,6 +59,8 @@ class TaskService:
             "turn_id": _generate_identifier("turn"),
             "task_id": _generate_identifier("task"),
             "trace_id": sanitize_text(trace_id or "") or _generate_identifier("trace"),
+            "execution_mode": "",
+            "protocol_summary": "",
             "route_name": "",
             "route_reason": "",
             "debate_summary": "",

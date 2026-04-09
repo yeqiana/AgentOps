@@ -12,8 +12,8 @@ What it does:
   inject the generated frame asset into the workflow state.
 
 Why this is done this way:
-- These tests focus on state flow, node connections, and tool-triggered workflow
-  behavior instead of model quality.
+- These tests focus on state flow, node connections, and tool-triggered
+  workflow behavior instead of model quality.
 """
 
 from __future__ import annotations
@@ -39,8 +39,12 @@ SMALL_PNG_BASE64 = (
 class WorkflowSmokeTests(unittest.TestCase):
     def setUp(self) -> None:
         os.environ["LLM_PROVIDER"] = "mock"
+        os.environ.pop("APP_WORKFLOW_EXECUTION_MODE", None)
         get_llm_settings.cache_clear()
         get_llm_client.cache_clear()
+
+    def tearDown(self) -> None:
+        os.environ.pop("APP_WORKFLOW_EXECUTION_MODE", None)
 
     def test_graph_invoke_returns_plan_answer_and_messages(self) -> None:
         graph = build_graph()
@@ -59,6 +63,8 @@ class WorkflowSmokeTests(unittest.TestCase):
 
         result = graph.invoke(state)
 
+        self.assertEqual(result["execution_mode"], "delegated")
+        self.assertTrue(result["protocol_summary"])
         self.assertTrue(result["plan"])
         self.assertTrue(result["debate_summary"])
         self.assertTrue(result["arbitration_summary"])
@@ -93,8 +99,34 @@ class WorkflowSmokeTests(unittest.TestCase):
         self.assertTrue(result["plan"])
         self.assertTrue(result["answer"])
         self.assertEqual(result["route_name"], "image_analysis")
+        self.assertEqual(result["execution_mode"], "delegated")
         self.assertIn("当前路由未启用", result["debate_summary"])
-        self.assertIn("批评代理", result["critic_summary"])
+        self.assertTrue(result["critic_summary"])
+
+    def test_graph_standard_execution_mode_skips_debate_arbitration_and_critic(self) -> None:
+        with patch.dict(os.environ, {"APP_WORKFLOW_EXECUTION_MODE": "standard"}, clear=False):
+            graph = build_graph()
+            state = create_initial_state()
+            state["user_input"] = "请比较两个方案的优缺点并给出建议"
+            state["messages"] = [{"role": "user", "content": "请比较两个方案的优缺点并给出建议"}]
+            state["input_assets"] = [
+                {
+                    "kind": "text",
+                    "name": "text_input",
+                    "content": "请比较两个方案的优缺点并给出建议",
+                    "source": "test",
+                    "storage_mode": "inline_text",
+                }
+            ]
+
+            result = graph.invoke(state)
+
+        self.assertEqual(result["execution_mode"], "standard")
+        self.assertEqual(result["protocol_summary"], "planner -> executor -> reviewer")
+        self.assertEqual(result["route_name"], "deliberation_chat")
+        self.assertEqual(result["debate_summary"], "当前执行协议为 standard，已跳过多 Agent 辩论。")
+        self.assertEqual(result["arbitration_summary"], "当前执行协议为 standard，已跳过仲裁。")
+        self.assertEqual(result["critic_summary"], "当前执行协议为 standard，已跳过批评代理。")
 
     def test_graph_invoke_writes_tool_results_when_local_tool_is_available(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

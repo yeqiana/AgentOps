@@ -20,6 +20,7 @@ from app.workflow.nodes import (
     critic_node,
     debate_node,
     plan_node,
+    protocol_node,
     review_node,
     router_node,
     tool_node,
@@ -43,6 +44,7 @@ def build_graph():
     graph_builder = StateGraph(AgentState)
     graph_builder.add_node("tool_node", tool_node)
     graph_builder.add_node("router_node", router_node)
+    graph_builder.add_node("protocol_node", protocol_node)
     graph_builder.add_node("plan_node", plan_node)
     graph_builder.add_node("debate_node", debate_node)
     graph_builder.add_node("arbitration_node", arbitration_node)
@@ -51,7 +53,8 @@ def build_graph():
     graph_builder.add_node("review_node", review_node)
     graph_builder.add_edge(START, "tool_node")
     graph_builder.add_edge("tool_node", "router_node")
-    graph_builder.add_edge("router_node", "plan_node")
+    graph_builder.add_edge("router_node", "protocol_node")
+    graph_builder.add_edge("protocol_node", "plan_node")
     graph_builder.add_edge("plan_node", "debate_node")
     graph_builder.add_edge("debate_node", "arbitration_node")
     graph_builder.add_edge("arbitration_node", "answer_node")
