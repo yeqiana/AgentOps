@@ -259,6 +259,19 @@ class TaskListResponse(BaseModel):
     tasks: list[TaskResponse]
 
 
+class TaskSummaryPayload(BaseModel):
+    task: TaskPayload
+    trace: TracePayload | None = None
+    task_events: list[TaskEventPayload] = Field(default_factory=list)
+    tool_results: list[ToolResultPayload] = Field(default_factory=list)
+    route_decisions: list[RouteDecisionPayload] = Field(default_factory=list)
+    alerts: list["AlertEventPayload"] = Field(default_factory=list)
+
+
+class TaskSummaryResponse(BaseModel):
+    summary: TaskSummaryPayload
+
+
 class ToolInfoPayload(BaseModel):
     name: str
     description: str
