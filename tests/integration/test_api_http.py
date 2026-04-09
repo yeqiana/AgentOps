@@ -462,6 +462,37 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(summary["task_events"][-1]["event_type"], "completed")
         self.assertEqual(summary["alerts"][0]["event_code"], "summary_test_alert")
 
+    def test_task_summary_endpoint_returns_aggregated_execution_view(self) -> None:
+        response = self.client.post(
+            "/chat",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "task-summary-user",
+                "session_title": "Task Summary Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        get_alert_service().create_alert(
+            trace_id=payload["trace_id"],
+            source_type="tool",
+            source_name="python_echo",
+            severity="info",
+            event_code="task_summary_test_alert",
+            message="task summary integration test",
+            payload={"task_id": payload["task_id"]},
+        )
+
+        summary_response = self.client.get(f"/tasks/{payload['task_id']}/summary")
+        self.assertEqual(summary_response.status_code, 200)
+        summary = summary_response.json()["summary"]
+        self.assertEqual(summary["task"]["id"], payload["task_id"])
+        self.assertEqual(summary["trace"]["trace_id"], payload["trace_id"])
+        self.assertGreaterEqual(len(summary["task_events"]), 1)
+        self.assertGreaterEqual(len(summary["route_decisions"]), 1)
+        self.assertEqual(summary["alerts"][0]["event_code"], "task_summary_test_alert")
+
     def test_alert_endpoints_can_query_persisted_alerts(self) -> None:
         alert = get_alert_service().create_alert(
             trace_id="trace_alert_test",

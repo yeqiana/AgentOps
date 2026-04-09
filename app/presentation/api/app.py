@@ -93,6 +93,8 @@ from app.presentation.api.schemas import (
     TaskEventPayload,
     TaskPayload,
     TaskResponse,
+    TaskSummaryPayload,
+    TaskSummaryResponse,
     ToolExecuteRequest,
     ToolExecuteResponse,
     ToolInfoPayload,
@@ -909,6 +911,28 @@ def create_app():
             raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
         return TaskResponse(**task)
 
+
+    @app.get("/tasks/{task_id}/summary", response_model=TaskSummaryResponse, responses={404: {"model": ErrorResponse}})
+    def get_task_summary(task_id: str, request: Request) -> TaskSummaryResponse:
+        require_permission(request, "task.read")
+        normalized_task_id = sanitize_text(task_id)
+        task_bundle = session_service.get_task(normalized_task_id)
+        if not task_bundle:
+            raise HTTPException(status_code=404, detail=ValidationError("??????").to_dict())
+
+        task = task_bundle["task"]
+        trace = trace_service.get_trace(task["trace_id"]) if task["trace_id"] else None
+        alerts = alert_service.list_alerts(trace_id=task["trace_id"], limit=100, offset=0) if task["trace_id"] else []
+        return TaskSummaryResponse(
+            summary=TaskSummaryPayload(
+                task=TaskPayload(**task),
+                trace=TracePayload(**trace) if trace else None,
+                task_events=[TaskEventPayload(**item) for item in task_bundle["task_events"]],
+                tool_results=[ToolResultPayload(**item) for item in task_bundle["tool_results"]],
+                route_decisions=[RouteDecisionPayload(**item) for item in task_bundle["route_decisions"]],
+                alerts=[AlertEventPayload(**item) for item in alerts],
+            )
+        )
     @app.get("/tasks/{task_id}/events", response_model=TaskEventListResponse, responses={404: {"model": ErrorResponse}})
     def get_task_events(task_id: str, request: Request, limit: int = 100, offset: int = 0) -> TaskEventListResponse:
         require_permission(request, "task.read")
