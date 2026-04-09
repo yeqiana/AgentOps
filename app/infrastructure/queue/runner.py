@@ -35,6 +35,29 @@ class BackgroundTaskRunner:
         future.add_done_callback(lambda _: self._cleanup(task_id))
         return future
 
+    def cancel(self, task_id: str) -> bool:
+        with self.lock:
+            future = self.futures.get(task_id)
+        if future is None:
+            return False
+        cancelled = future.cancel()
+        if cancelled:
+            self._cleanup(task_id)
+        return cancelled
+
+    def get_task_runtime_state(self, task_id: str) -> str:
+        with self.lock:
+            future = self.futures.get(task_id)
+        if future is None:
+            return "missing"
+        if future.cancelled():
+            return "cancelled"
+        if future.running():
+            return "running"
+        if future.done():
+            return "done"
+        return "queued"
+
     def _cleanup(self, task_id: str) -> None:
         with self.lock:
             self.futures.pop(task_id, None)

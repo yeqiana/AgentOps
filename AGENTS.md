@@ -75,6 +75,7 @@
   - 流式对话输出：CLI 流式打印，API `SSE` 流式返回
   - 异步任务深化：`/tasks/submit` + 本地后台执行器 + `queued/running/completed/failed` 状态链
   - 异步任务运行时快照：`/tasks/runtime`
+  - 异步任务取消：`/tasks/{task_id}/cancel`
   - 任务事件持久化与查询：`biz_task_event`、`/tasks/{task_id}/events`
 - 阶段 2 后续继续建设：
   - 失败恢复增强
