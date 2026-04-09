@@ -39,6 +39,14 @@ from app.presentation.api.middleware.auth import AuthMiddleware
 from app.presentation.api.middleware.governance import GovernanceMiddleware, IdempotencyStore, RateLimiter
 from app.presentation.api.middleware.trace import TraceMiddleware
 from app.presentation.api.schemas import (
+    AuthMeResponse,
+    AuthPermissionPayload,
+    AuthProfilePayload,
+    AuthRoleListResponse,
+    AuthRolePayload,
+    AuthSubjectRoleAssignRequest,
+    AuthSubjectRoleAssignResponse,
+    AuthSubjectRolePayload,
     AnalyzeAssetRequest,
     AnalyzeAssetResponse,
     AlertEventListResponse,
@@ -136,6 +144,19 @@ def create_app():
     def current_tool_registry():
         return build_default_tool_registry(config_service)
 
+    def get_auth_profile(request: Request):
+        return auth_service.get_authorization_profile(
+            getattr(request.state, "auth_subject", "anonymous"),
+            getattr(request.state, "auth_type", "unknown"),
+        )
+
+    def require_permission(request: Request, permission_key: str):
+        return auth_service.authorize(
+            subject=getattr(request.state, "auth_subject", "anonymous"),
+            auth_type=getattr(request.state, "auth_type", "unknown"),
+            permission_key=permission_key,
+        )
+
     @app.exception_handler(AgentError)
     async def handle_agent_error(request: Request, error: AgentError) -> JSONResponse:
         status_code = 500
@@ -174,12 +195,72 @@ def create_app():
     def health() -> HealthResponse:
         return HealthResponse(status="ok")
 
+    @app.get("/auth/me", response_model=AuthMeResponse)
+    def get_auth_me(request: Request) -> AuthMeResponse:
+        profile = get_auth_profile(request)
+        return AuthMeResponse(
+            profile=AuthProfilePayload(
+                auth_subject=profile.subject,
+                auth_type=profile.auth_type,
+                roles=profile.roles,
+                permissions=profile.permissions,
+            )
+        )
+
+    @app.get("/auth/roles", response_model=AuthRoleListResponse)
+    def list_auth_roles(request: Request) -> AuthRoleListResponse:
+        require_permission(request, "auth.read")
+        roles = auth_service.list_roles()
+        permissions = auth_service.list_permissions()
+        return AuthRoleListResponse(
+            roles=[
+                AuthRolePayload(
+                    role_key=item["role_key"],
+                    role_name=item["role_name"],
+                    description=item["description"],
+                    is_enabled=item["is_enabled"],
+                )
+                for item in roles
+            ],
+            permissions=[
+                AuthPermissionPayload(
+                    permission_key=item["permission_key"],
+                    permission_name=item["permission_name"],
+                    description=item["description"],
+                )
+                for item in permissions
+            ],
+        )
+
+    @app.put("/auth/subjects/{auth_subject}/roles", response_model=AuthSubjectRoleAssignResponse, responses={400: {"model": ErrorResponse}, 403: {"model": ErrorResponse}})
+    def assign_subject_roles(auth_subject: str, payload: AuthSubjectRoleAssignRequest, request: Request) -> AuthSubjectRoleAssignResponse:
+        require_permission(request, "auth.role.assign")
+        assignments = auth_service.assign_subject_roles(
+            auth_subject=sanitize_text(auth_subject),
+            role_keys=payload.role_keys,
+            updated_by=sanitize_text(payload.updated_by) or getattr(request.state, "auth_subject", "api-auth"),
+        )
+        return AuthSubjectRoleAssignResponse(
+            auth_subject=sanitize_text(auth_subject),
+            role_keys=[item["role_key"] for item in assignments],
+            assignments=[
+                AuthSubjectRolePayload(
+                    auth_subject=item["auth_subject"],
+                    role_key=item["role_key"],
+                    created_at=item["created_at"],
+                    updated_at=item["updated_at"],
+                )
+                for item in assignments
+            ],
+        )
+
     @app.post(
         "/chat",
         response_model=ChatResponse,
         responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
     )
     def chat(payload: ChatRequest, request: Request) -> ChatResponse:
+        require_permission(request, "chat.execute")
         user_input = sanitize_text(payload.message)
         session_id = sanitize_text(payload.session_id or "")
         user_name = sanitize_text(payload.user_name) or "api-user"
@@ -251,6 +332,7 @@ def create_app():
         responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
     )
     def chat_stream(payload: ChatRequest, request: Request):
+        require_permission(request, "chat.execute")
         user_input = sanitize_text(payload.message)
         session_id = sanitize_text(payload.session_id or "")
         user_name = sanitize_text(payload.user_name) or "api-user"
@@ -335,42 +417,48 @@ def create_app():
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     @app.get("/sessions", response_model=SessionListResponse)
-    def list_sessions(limit: int = 20, offset: int = 0) -> SessionListResponse:
+    def list_sessions(request: Request, limit: int = 20, offset: int = 0) -> SessionListResponse:
+        require_permission(request, "session.read")
         normalized_limit = max(1, min(limit, 100))
         normalized_offset = max(0, offset)
         sessions = session_service.list_sessions(limit=normalized_limit, offset=normalized_offset)
         return SessionListResponse(sessions=sessions)
 
     @app.get("/sessions/{session_id}", response_model=SessionResponse, responses={404: {"model": ErrorResponse}})
-    def get_session(session_id: str) -> SessionResponse:
+    def get_session(session_id: str, request: Request) -> SessionResponse:
+        require_permission(request, "session.read")
         bundle = session_service.get_session_bundle(session_id)
         if not bundle["session"]:
             raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
         return SessionResponse(**bundle)
 
     @app.get("/sessions/{session_id}/assets", response_model=AssetListResponse, responses={404: {"model": ErrorResponse}})
-    def list_assets_by_session(session_id: str) -> AssetListResponse:
+    def list_assets_by_session(session_id: str, request: Request) -> AssetListResponse:
+        require_permission(request, "session.read")
         bundle = session_service.get_session_bundle(session_id)
         if not bundle["session"]:
             raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
         return AssetListResponse(assets=[AssetPayload(**asset) for asset in bundle["assets"]])
 
     @app.get("/assets/{asset_id}", response_model=AssetResponse, responses={404: {"model": ErrorResponse}})
-    def get_asset(asset_id: str) -> AssetResponse:
+    def get_asset(asset_id: str, request: Request) -> AssetResponse:
+        require_permission(request, "session.read")
         asset = session_service.get_asset(asset_id)
         if not asset:
             raise HTTPException(status_code=404, detail=ValidationError("资产不存在。").to_dict())
         return AssetResponse(asset=AssetPayload(**asset))
 
     @app.get("/tools", response_model=ToolListResponse)
-    def list_tools() -> ToolListResponse:
+    def list_tools(request: Request) -> ToolListResponse:
+        require_permission(request, "tool.read")
         descriptions = current_tool_registry().get_tool_descriptions()
         return ToolListResponse(
             tools=[ToolInfoPayload(name=name, description=description) for name, description in descriptions.items()]
         )
 
     @app.get("/workflow/config", response_model=WorkflowConfigResponse)
-    def get_workflow_config() -> WorkflowConfigResponse:
+    def get_workflow_config(request: Request) -> WorkflowConfigResponse:
+        require_permission(request, "workflow.read")
         registry = build_workflow_policy_registry(config_service, workflow_role_service)
         return WorkflowConfigResponse(
             workflow=WorkflowConfigPayload(
@@ -416,7 +504,8 @@ def create_app():
         )
 
     @app.get("/workflow/roles", response_model=WorkflowRoleListResponse)
-    def list_workflow_roles(enabled_only: bool = False) -> WorkflowRoleListResponse:
+    def list_workflow_roles(request: Request, enabled_only: bool = False) -> WorkflowRoleListResponse:
+        require_permission(request, "workflow.read")
         roles = workflow_role_service.list_roles(only_enabled=enabled_only)
         return WorkflowRoleListResponse(
             roles=[
@@ -434,7 +523,8 @@ def create_app():
         )
 
     @app.put("/workflow/roles/{role_key}", response_model=WorkflowRoleUpsertResponse, responses={400: {"model": ErrorResponse}})
-    def upsert_workflow_role(role_key: str, payload: WorkflowRoleUpsertRequest) -> WorkflowRoleUpsertResponse:
+    def upsert_workflow_role(role_key: str, payload: WorkflowRoleUpsertRequest, request: Request) -> WorkflowRoleUpsertResponse:
+        require_permission(request, "workflow_role.write")
         normalized_role_key = sanitize_text(role_key)
         if not normalized_role_key:
             raise ValidationError("role_key 不能为空。")
@@ -461,7 +551,8 @@ def create_app():
         )
 
     @app.get("/security/config", response_model=SecurityConfigResponse)
-    def get_security_config() -> SecurityConfigResponse:
+    def get_security_config(request: Request) -> SecurityConfigResponse:
+        require_permission(request, "config.read")
         effective_security = config_service.get_effective_security_config()
         return SecurityConfigResponse(
             security=SecurityConfigPayload(
@@ -475,7 +566,8 @@ def create_app():
         )
 
     @app.get("/recovery/config", response_model=RecoveryConfigResponse)
-    def get_recovery_config() -> RecoveryConfigResponse:
+    def get_recovery_config(request: Request) -> RecoveryConfigResponse:
+        require_permission(request, "config.read")
         effective_recovery = config_service.get_effective_recovery_config()
         return RecoveryConfigResponse(
             recovery=RecoveryConfigPayload(
@@ -485,7 +577,8 @@ def create_app():
         )
 
     @app.get("/config/runtime", response_model=RuntimeConfigListResponse)
-    def list_runtime_configs(scope: str | None = None) -> RuntimeConfigListResponse:
+    def list_runtime_configs(request: Request, scope: str | None = None) -> RuntimeConfigListResponse:
+        require_permission(request, "config.read")
         normalized_scope = sanitize_text(scope or "") or None
         configs = config_service.list_configs(scope=normalized_scope)
         return RuntimeConfigListResponse(
@@ -508,7 +601,8 @@ def create_app():
         )
 
     @app.put("/config/runtime", response_model=RuntimeConfigUpsertResponse, responses={400: {"model": ErrorResponse}})
-    def upsert_runtime_config(payload: RuntimeConfigUpsertRequest) -> RuntimeConfigUpsertResponse:
+    def upsert_runtime_config(payload: RuntimeConfigUpsertRequest, request: Request) -> RuntimeConfigUpsertResponse:
+        require_permission(request, "config.write")
         if not payload.config_scope or not payload.config_key:
             raise ValidationError("config_scope 和 config_key 不能为空。")
         item = config_service.upsert_config(
@@ -539,6 +633,7 @@ def create_app():
 
     @app.post("/tools/{tool_name}/execute", response_model=ToolExecuteResponse, responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}})
     def execute_tool(tool_name: str, payload: ToolExecuteRequest, request: Request) -> ToolExecuteResponse:
+        require_permission(request, "tool.execute")
         normalized_tool_name = sanitize_text(tool_name)
         if not normalized_tool_name:
             raise ValidationError("tool_name 不能为空。")
@@ -547,7 +642,8 @@ def create_app():
         return ToolExecuteResponse(result=result)
 
     @app.get("/tasks", response_model=TaskListResponse)
-    def list_tasks(status: str | None = None, session_id: str | None = None, limit: int = 20, offset: int = 0) -> TaskListResponse:
+    def list_tasks(request: Request, status: str | None = None, session_id: str | None = None, limit: int = 20, offset: int = 0) -> TaskListResponse:
+        require_permission(request, "task.read")
         normalized_limit = max(1, min(limit, 100))
         normalized_offset = max(0, offset)
         normalized_status = sanitize_text(status or "") or None
@@ -561,7 +657,8 @@ def create_app():
         return TaskListResponse(tasks=[TaskResponse(**task) for task in tasks])
 
     @app.get("/sessions/{session_id}/tasks", response_model=TaskListResponse, responses={404: {"model": ErrorResponse}})
-    def list_tasks_by_session(session_id: str, limit: int = 20, offset: int = 0) -> TaskListResponse:
+    def list_tasks_by_session(session_id: str, request: Request, limit: int = 20, offset: int = 0) -> TaskListResponse:
+        require_permission(request, "task.read")
         bundle = session_service.get_session_bundle(session_id)
         if not bundle["session"]:
             raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
@@ -571,14 +668,16 @@ def create_app():
         return TaskListResponse(tasks=[TaskResponse(**task) for task in tasks])
 
     @app.get("/tasks/{task_id}", response_model=TaskResponse, responses={404: {"model": ErrorResponse}})
-    def get_task(task_id: str) -> TaskResponse:
+    def get_task(task_id: str, request: Request) -> TaskResponse:
+        require_permission(request, "task.read")
         task = session_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
         return TaskResponse(**task)
 
     @app.get("/traces/{trace_id}", response_model=TraceResponse, responses={404: {"model": ErrorResponse}})
-    def get_trace(trace_id: str) -> TraceResponse:
+    def get_trace(trace_id: str, request: Request) -> TraceResponse:
+        require_permission(request, "trace.read")
         trace = trace_service.get_trace(sanitize_text(trace_id))
         if not trace:
             raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
@@ -586,12 +685,14 @@ def create_app():
 
     @app.get("/alerts", response_model=AlertEventListResponse)
     def list_alerts(
+        request: Request,
         severity: str | None = None,
         source_type: str | None = None,
         trace_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> AlertEventListResponse:
+        require_permission(request, "alert.read")
         alerts = alert_service.list_alerts(
             severity=sanitize_text(severity or "") or None,
             source_type=sanitize_text(source_type or "") or None,
@@ -618,7 +719,8 @@ def create_app():
         )
 
     @app.get("/alerts/{alert_id}", response_model=AlertEventResponse, responses={404: {"model": ErrorResponse}})
-    def get_alert(alert_id: str) -> AlertEventResponse:
+    def get_alert(alert_id: str, request: Request) -> AlertEventResponse:
+        require_permission(request, "alert.read")
         alert = alert_service.get_alert(sanitize_text(alert_id))
         if not alert:
             raise HTTPException(status_code=404, detail=ValidationError("告警不存在。").to_dict())
@@ -638,7 +740,8 @@ def create_app():
         )
 
     @app.get("/traces/{trace_id}/alerts", response_model=AlertEventListResponse, responses={404: {"model": ErrorResponse}})
-    def list_trace_alerts(trace_id: str) -> AlertEventListResponse:
+    def list_trace_alerts(trace_id: str, request: Request) -> AlertEventListResponse:
+        require_permission(request, "alert.read")
         normalized_trace_id = sanitize_text(trace_id)
         trace = trace_service.get_trace(normalized_trace_id)
         if not trace:
@@ -664,6 +767,7 @@ def create_app():
 
     @app.post("/assets/analyze", response_model=AnalyzeAssetResponse, responses={400: {"model": ErrorResponse}})
     def analyze_asset(payload: AnalyzeAssetRequest, request: Request) -> AnalyzeAssetResponse:
+        require_permission(request, "asset.analyze")
         raw_input = sanitize_text(payload.input)
         if not raw_input:
             raise ValidationError("input 不能为空。")
@@ -692,6 +796,7 @@ def create_app():
         user_name: str = Form(default="upload-user"),
         session_title: str = Form(default="Upload Session"),
     ) -> UploadAssetResponse:
+        require_permission(request, "asset.upload")
         if not file.filename:
             raise ValidationError("上传文件名不能为空。")
         file_bytes = await file.read()

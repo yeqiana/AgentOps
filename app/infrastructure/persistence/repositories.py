@@ -19,6 +19,10 @@ from datetime import datetime, timezone
 
 from app.domain.models import (
     AlertEventRecord,
+    AuthPermissionRecord,
+    AuthRolePermissionRecord,
+    AuthRoleRecord,
+    AuthSubjectRoleRecord,
     AssetRecord,
     MessageRecord,
     RuntimeConfigRecord,
@@ -40,6 +44,10 @@ from app.infrastructure.persistence.database import (
     TABLE_SYS_USER,
     TABLE_SYS_WORKFLOW_ROLE,
     TABLE_SYS_ALERT_EVENT,
+    TABLE_SYS_AUTH_PERMISSION,
+    TABLE_SYS_AUTH_ROLE,
+    TABLE_SYS_AUTH_ROLE_PERMISSION,
+    TABLE_SYS_AUTH_SUBJECT_ROLE,
     get_connection,
 )
 
@@ -496,6 +504,122 @@ class SQLiteAlertEventRepository:
                 (alert_id,),
             ).fetchone()
             return dict(row) if row else None
+
+
+class SQLiteAuthRoleRepository:
+    def list_roles(self, *, only_enabled: bool = False) -> list[AuthRoleRecord]:
+        query = f"""
+            SELECT id, role_key, role_name, description, is_enabled,
+                   created_by, updated_by, created_at, updated_at,
+                   ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+            FROM {TABLE_SYS_AUTH_ROLE}
+        """
+        parameters: list[object] = []
+        if only_enabled:
+            query += " WHERE is_enabled = 1"
+        query += " ORDER BY role_key ASC"
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+            return [{**dict(row), "is_enabled": bool(row["is_enabled"])} for row in rows]
+
+
+class SQLiteAuthPermissionRepository:
+    def list_permissions(self) -> list[AuthPermissionRecord]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, permission_key, permission_name, description,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_AUTH_PERMISSION}
+                ORDER BY permission_key ASC
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+
+class SQLiteAuthRolePermissionRepository:
+    def list_by_role_keys(self, role_keys: list[str]) -> list[AuthRolePermissionRecord]:
+        if not role_keys:
+            return []
+        placeholders = ", ".join(["?"] * len(role_keys))
+        with get_connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, role_key, permission_key,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_AUTH_ROLE_PERMISSION}
+                WHERE role_key IN ({placeholders})
+                ORDER BY role_key ASC, permission_key ASC
+                """,
+                tuple(role_keys),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+
+class SQLiteAuthSubjectRoleRepository:
+    def list_by_subject(self, auth_subject: str) -> list[AuthSubjectRoleRecord]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, auth_subject, role_key,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_AUTH_SUBJECT_ROLE}
+                WHERE auth_subject = ?
+                ORDER BY role_key ASC
+                """,
+                (auth_subject,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def replace_subject_roles(self, *, auth_subject: str, role_keys: list[str], updated_by: str) -> list[AuthSubjectRoleRecord]:
+        timestamp = _now_iso()
+        with get_connection() as connection:
+            connection.execute(f"DELETE FROM {TABLE_SYS_AUTH_SUBJECT_ROLE} WHERE auth_subject = ?", (auth_subject,))
+            if not role_keys:
+                return []
+            rows_to_insert = []
+            for role_key in sorted(set(role_keys)):
+                rows_to_insert.append(
+                    (
+                        f"auth_subject_role_{uuid.uuid4().hex}",
+                        auth_subject,
+                        role_key,
+                        updated_by,
+                        updated_by,
+                        timestamp,
+                        timestamp,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                    )
+                )
+            connection.executemany(
+                f"""
+                INSERT INTO {TABLE_SYS_AUTH_SUBJECT_ROLE} (
+                    id, auth_subject, role_key,
+                    created_by, updated_by, created_at, updated_at,
+                    ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows_to_insert,
+            )
+            rows = connection.execute(
+                f"""
+                SELECT id, auth_subject, role_key,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_AUTH_SUBJECT_ROLE}
+                WHERE auth_subject = ?
+                ORDER BY role_key ASC
+                """,
+                (auth_subject,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
 
 class SQLiteMessageRepository:

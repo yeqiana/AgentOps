@@ -64,6 +64,8 @@ class ApiHttpTests(unittest.TestCase):
     def tearDown(self) -> None:
         for name in [
             "APP_AUTH_ENABLED",
+            "APP_RBAC_ENABLED",
+            "APP_AUTH_ADMIN_SUBJECTS",
             "APP_API_KEYS",
             "APP_BEARER_TOKENS",
             "APP_RATE_LIMIT_ENABLED",
@@ -692,3 +694,60 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(second.headers["X-Idempotent-Replay"], "true")
         os.environ.pop("APP_IDEMPOTENCY_ENABLED", None)
         os.environ.pop("APP_IDEMPOTENCY_TTL_SECONDS", None)
+
+    def test_rbac_admin_can_query_and_assign_roles(self) -> None:
+        os.environ["APP_AUTH_ENABLED"] = "true"
+        os.environ["APP_RBAC_ENABLED"] = "true"
+        os.environ["APP_API_KEYS"] = "demo-key,viewer-key"
+        os.environ["APP_AUTH_ADMIN_SUBJECTS"] = "apikey:demo-key"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        admin_headers = {"X-API-Key": "demo-key"}
+
+        me_response = client.get("/auth/me", headers=admin_headers)
+        self.assertEqual(me_response.status_code, 200)
+        profile = me_response.json()["profile"]
+        self.assertIn("admin", profile["roles"])
+        self.assertIn("config.write", profile["permissions"])
+
+        roles_response = client.get("/auth/roles", headers=admin_headers)
+        self.assertEqual(roles_response.status_code, 200)
+        roles_payload = roles_response.json()
+        self.assertGreaterEqual(len(roles_payload["roles"]), 3)
+        self.assertGreaterEqual(len(roles_payload["permissions"]), 10)
+
+        assign_response = client.put(
+            "/auth/subjects/apikey:viewer-k/roles",
+            headers=admin_headers,
+            json={"role_keys": ["viewer"], "updated_by": "admin-test"},
+        )
+        self.assertEqual(assign_response.status_code, 200)
+        assign_payload = assign_response.json()
+        self.assertEqual(assign_payload["role_keys"], ["viewer"])
+
+        viewer_response = client.get("/auth/me", headers={"X-API-Key": "viewer-key"})
+        self.assertEqual(viewer_response.status_code, 200)
+        viewer_profile = viewer_response.json()["profile"]
+        self.assertEqual(viewer_profile["roles"], ["viewer"])
+        self.assertIn("task.read", viewer_profile["permissions"])
+        self.assertNotIn("config.write", viewer_profile["permissions"])
+
+        forbidden_response = client.put(
+            "/config/runtime",
+            headers={"X-API-Key": "viewer-key"},
+            json={
+                "config_scope": "workflow",
+                "config_key": "execution_mode",
+                "config_value": "standard",
+                "value_type": "str",
+                "description": "forbidden",
+                "updated_by": "viewer",
+            },
+        )
+        self.assertEqual(forbidden_response.status_code, 403)
+        forbidden_payload = forbidden_response.json()
+        self.assertEqual(forbidden_payload["code"], "authorization_error")
+
+        for name in ["APP_AUTH_ENABLED", "APP_RBAC_ENABLED", "APP_API_KEYS", "APP_AUTH_ADMIN_SUBJECTS"]:
+            os.environ.pop(name, None)

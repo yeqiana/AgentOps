@@ -28,6 +28,8 @@ DEFAULT_UPLOAD_DOWNLOAD_DIR = "/app/download"
 UPLOAD_DOWNLOAD_DIR_ENV = "APP_DOWNLOAD_DIR"
 
 AUTH_ENABLED_ENV = "APP_AUTH_ENABLED"
+RBAC_ENABLED_ENV = "APP_RBAC_ENABLED"
+AUTH_ADMIN_SUBJECTS_ENV = "APP_AUTH_ADMIN_SUBJECTS"
 API_KEYS_ENV = "APP_API_KEYS"
 BEARER_TOKENS_ENV = "APP_BEARER_TOKENS"
 
@@ -117,6 +119,7 @@ DEFAULT_UPLOAD_ALLOWED_KINDS = ["image", "audio", "video", "file"]
 DEFAULT_ALLOWED_TOOLS: list[str] = []
 DEFAULT_RECOVERY_LLM_DEGRADE_TO_MOCK = False
 DEFAULT_RECOVERY_TOOL_SOFT_FAIL = False
+DEFAULT_RBAC_ENABLED = False
 
 
 def _get_bool_env(name: str, default: bool = False) -> bool:
@@ -190,6 +193,14 @@ def ensure_upload_download_dir() -> Path:
 
 def is_auth_enabled() -> bool:
     return _get_bool_env(AUTH_ENABLED_ENV, default=False)
+
+
+def is_rbac_enabled() -> bool:
+    return _get_bool_env(RBAC_ENABLED_ENV, default=DEFAULT_RBAC_ENABLED)
+
+
+def get_auth_admin_subjects() -> list[str]:
+    return _get_csv_env(AUTH_ADMIN_SUBJECTS_ENV, [])
 
 
 def get_api_keys() -> list[str]:

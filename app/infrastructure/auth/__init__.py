@@ -1,3 +1,3 @@
-from app.infrastructure.auth.service import AuthService, AuthenticatedPrincipal
+from app.infrastructure.auth.service import AuthService, AuthenticatedPrincipal, AuthorizationProfile
 
-__all__ = ["AuthService", "AuthenticatedPrincipal"]
+__all__ = ["AuthService", "AuthenticatedPrincipal", "AuthorizationProfile"]

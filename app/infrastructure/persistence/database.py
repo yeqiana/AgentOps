@@ -29,7 +29,7 @@ from app.domain.errors import PersistenceError
 
 
 DEFAULT_DATABASE_URL = "sqlite:///data/agent.db"
-SCHEMA_VERSION = "2026_04_09_01"
+SCHEMA_VERSION = "2026_04_09_02"
 
 TABLE_SYS_SCHEMA_VERSION = "sys_schema_version"
 TABLE_SYS_USER = "sys_user"
@@ -37,6 +37,10 @@ TABLE_SYS_REQUEST_TRACE = "sys_request_trace"
 TABLE_SYS_RUNTIME_CONFIG = "sys_runtime_config"
 TABLE_SYS_WORKFLOW_ROLE = "sys_workflow_role"
 TABLE_SYS_ALERT_EVENT = "sys_alert_event"
+TABLE_SYS_AUTH_ROLE = "sys_auth_role"
+TABLE_SYS_AUTH_PERMISSION = "sys_auth_permission"
+TABLE_SYS_AUTH_ROLE_PERMISSION = "sys_auth_role_permission"
+TABLE_SYS_AUTH_SUBJECT_ROLE = "sys_auth_subject_role"
 
 TABLE_BIZ_SESSION = "biz_session"
 TABLE_BIZ_MESSAGE = "biz_message"
@@ -109,6 +113,43 @@ SCHEMA_STATEMENTS = (
         message TEXT NOT NULL,
         payload_json TEXT NOT NULL,
 {AUDIT_FIELD_SQL}
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_SYS_AUTH_ROLE} (
+        id TEXT PRIMARY KEY,
+        role_key TEXT NOT NULL UNIQUE,
+        role_name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        is_enabled INTEGER NOT NULL,
+{AUDIT_FIELD_SQL}
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_SYS_AUTH_PERMISSION} (
+        id TEXT PRIMARY KEY,
+        permission_key TEXT NOT NULL UNIQUE,
+        permission_name TEXT NOT NULL,
+        description TEXT NOT NULL,
+{AUDIT_FIELD_SQL}
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_SYS_AUTH_ROLE_PERMISSION} (
+        id TEXT PRIMARY KEY,
+        role_key TEXT NOT NULL,
+        permission_key TEXT NOT NULL,
+{AUDIT_FIELD_SQL},
+        UNIQUE(role_key, permission_key)
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_SYS_AUTH_SUBJECT_ROLE} (
+        id TEXT PRIMARY KEY,
+        auth_subject TEXT NOT NULL,
+        role_key TEXT NOT NULL,
+{AUDIT_FIELD_SQL},
+        UNIQUE(auth_subject, role_key)
     )
     """,
     f"""
@@ -215,6 +256,10 @@ INDEX_STATEMENTS = (
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ALERT_EVENT}_severity_created ON {TABLE_SYS_ALERT_EVENT}(severity, created_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ALERT_EVENT}_trace_created ON {TABLE_SYS_ALERT_EVENT}(trace_id, created_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ALERT_EVENT}_source_created ON {TABLE_SYS_ALERT_EVENT}(source_type, source_name, created_at DESC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_AUTH_ROLE}_enabled ON {TABLE_SYS_AUTH_ROLE}(is_enabled, role_key ASC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_AUTH_PERMISSION}_key ON {TABLE_SYS_AUTH_PERMISSION}(permission_key)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_AUTH_ROLE_PERMISSION}_role ON {TABLE_SYS_AUTH_ROLE_PERMISSION}(role_key, permission_key)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_AUTH_SUBJECT_ROLE}_subject ON {TABLE_SYS_AUTH_SUBJECT_ROLE}(auth_subject, role_key)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_SESSION}_updated_at ON {TABLE_BIZ_SESSION}(updated_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_SESSION}_user_id ON {TABLE_BIZ_SESSION}(user_id, updated_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_BIZ_MESSAGE}_session_turn ON {TABLE_BIZ_MESSAGE}(session_id, created_at ASC)",
@@ -296,6 +341,50 @@ AUDIT_COLUMN_MIGRATIONS = {
         ("ext_data3", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
         ("ext_data4", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
         ("ext_data5", f"ALTER TABLE {TABLE_SYS_ALERT_EVENT} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
+    ),
+    TABLE_SYS_AUTH_ROLE: (
+        ("created_by", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("updated_by", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("created_at", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+        ("updated_at", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+        ("ext_data1", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data2", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data3", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data4", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data5", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
+    ),
+    TABLE_SYS_AUTH_PERMISSION: (
+        ("created_by", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("updated_by", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("created_at", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+        ("updated_at", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+        ("ext_data1", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data2", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data3", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data4", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data5", f"ALTER TABLE {TABLE_SYS_AUTH_PERMISSION} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
+    ),
+    TABLE_SYS_AUTH_ROLE_PERMISSION: (
+        ("created_by", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("updated_by", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("created_at", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+        ("updated_at", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+        ("ext_data1", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data2", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data3", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data4", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data5", f"ALTER TABLE {TABLE_SYS_AUTH_ROLE_PERMISSION} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
+    ),
+    TABLE_SYS_AUTH_SUBJECT_ROLE: (
+        ("created_by", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("updated_by", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("created_at", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+        ("updated_at", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+        ("ext_data1", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data2", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data3", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data4", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data5", f"ALTER TABLE {TABLE_SYS_AUTH_SUBJECT_ROLE} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
     ),
     TABLE_BIZ_SESSION: (
         ("created_by", f"ALTER TABLE {TABLE_BIZ_SESSION} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
@@ -632,7 +721,7 @@ def _upsert_schema_version(connection: sqlite3.Connection) -> None:
         """,
         (
             SCHEMA_VERSION,
-            "Add stage-2 switchable execution protocol fields for tasks and workflow queries.",
+            "Add stage-2 minimal RBAC tables and seeds.",
         ),
     )
 
@@ -764,6 +853,132 @@ def _seed_additional_workflow_roles(connection: sqlite3.Connection) -> None:
         )
 
 
+def _seed_default_auth_model(connection: sqlite3.Connection) -> None:
+    """
+    What this is:
+    - The minimal RBAC seed set for stage 2.
+
+    What it does:
+    - Seeds default roles, permissions, and role-permission mappings.
+
+    Why this is done this way:
+    - Stage 2 now needs authorization in addition to authentication, but it
+      should still remain small enough to fit the current single-service runtime.
+    """
+
+    timestamp = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+    roles = (
+        ("auth_role_viewer", "viewer", "只读角色", "默认只读角色，可查询运行状态与结果。", 1),
+        ("auth_role_operator", "operator", "操作角色", "允许执行聊天、上传和工具调用。", 1),
+        ("auth_role_admin", "admin", "管理角色", "允许修改运行时配置、角色配置和主体授权。", 1),
+    )
+    permissions = (
+        ("auth_perm_chat_execute", "chat.execute", "执行对话", "允许发起聊天与流式对话。"),
+        ("auth_perm_asset_analyze", "asset.analyze", "分析资产", "允许执行资产分析。"),
+        ("auth_perm_asset_upload", "asset.upload", "上传资产", "允许上传文件并写入资产记录。"),
+        ("auth_perm_session_read", "session.read", "读取会话", "允许查询会话、消息与会话资产。"),
+        ("auth_perm_task_read", "task.read", "读取任务", "允许查询任务与工具结果。"),
+        ("auth_perm_trace_read", "trace.read", "读取追踪", "允许查询 trace 数据。"),
+        ("auth_perm_alert_read", "alert.read", "读取告警", "允许查询告警数据。"),
+        ("auth_perm_tool_read", "tool.read", "读取工具", "允许查询可用工具列表。"),
+        ("auth_perm_tool_execute", "tool.execute", "执行工具", "允许主动调用工具执行接口。"),
+        ("auth_perm_workflow_read", "workflow.read", "读取工作流配置", "允许查询工作流配置与角色配置。"),
+        ("auth_perm_workflow_role_write", "workflow_role.write", "修改工作流角色", "允许更新工作流角色定义。"),
+        ("auth_perm_config_read", "config.read", "读取配置", "允许查询运行时配置、安全配置和恢复配置。"),
+        ("auth_perm_config_write", "config.write", "修改配置", "允许更新运行时配置。"),
+        ("auth_perm_auth_read", "auth.read", "读取授权信息", "允许查询当前主体权限与角色定义。"),
+        ("auth_perm_auth_role_assign", "auth.role.assign", "分配主体角色", "允许给主体分配角色。"),
+    )
+    role_permissions = (
+        ("viewer", "session.read"),
+        ("viewer", "task.read"),
+        ("viewer", "trace.read"),
+        ("viewer", "alert.read"),
+        ("viewer", "tool.read"),
+        ("viewer", "workflow.read"),
+        ("viewer", "config.read"),
+        ("viewer", "auth.read"),
+        ("operator", "chat.execute"),
+        ("operator", "asset.analyze"),
+        ("operator", "asset.upload"),
+        ("operator", "tool.execute"),
+        ("operator", "session.read"),
+        ("operator", "task.read"),
+        ("operator", "trace.read"),
+        ("operator", "alert.read"),
+        ("operator", "tool.read"),
+        ("operator", "workflow.read"),
+        ("operator", "config.read"),
+        ("operator", "auth.read"),
+        ("admin", "chat.execute"),
+        ("admin", "asset.analyze"),
+        ("admin", "asset.upload"),
+        ("admin", "tool.execute"),
+        ("admin", "session.read"),
+        ("admin", "task.read"),
+        ("admin", "trace.read"),
+        ("admin", "alert.read"),
+        ("admin", "tool.read"),
+        ("admin", "workflow.read"),
+        ("admin", "workflow_role.write"),
+        ("admin", "config.read"),
+        ("admin", "config.write"),
+        ("admin", "auth.read"),
+        ("admin", "auth.role.assign"),
+    )
+
+    for role_id, role_key, role_name, description, is_enabled in roles:
+        connection.execute(
+            f"""
+            INSERT INTO {TABLE_SYS_AUTH_ROLE} (
+                id, role_key, role_name, description, is_enabled,
+                created_by, updated_by, created_at, updated_at,
+                ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+            ) VALUES (
+                ?, ?, ?, ?, ?,
+                'system', 'system', {timestamp}, {timestamp},
+                '', '', '', '', ''
+            )
+            ON CONFLICT(role_key) DO NOTHING
+            """,
+            (role_id, role_key, role_name, description, is_enabled),
+        )
+
+    for permission_id, permission_key, permission_name, description in permissions:
+        connection.execute(
+            f"""
+            INSERT INTO {TABLE_SYS_AUTH_PERMISSION} (
+                id, permission_key, permission_name, description,
+                created_by, updated_by, created_at, updated_at,
+                ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+            ) VALUES (
+                ?, ?, ?, ?,
+                'system', 'system', {timestamp}, {timestamp},
+                '', '', '', '', ''
+            )
+            ON CONFLICT(permission_key) DO NOTHING
+            """,
+            (permission_id, permission_key, permission_name, description),
+        )
+
+    for role_key, permission_key in role_permissions:
+        connection.execute(
+            f"""
+            INSERT INTO {TABLE_SYS_AUTH_ROLE_PERMISSION} (
+                id, role_key, permission_key,
+                created_by, updated_by, created_at, updated_at,
+                ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+            ) VALUES (
+                ?, ?, ?,
+                'system', 'system', {timestamp}, {timestamp},
+                '', '', '', '', ''
+            )
+            ON CONFLICT(role_key, permission_key) DO NOTHING
+            """,
+            (f"auth_role_perm_{role_key}_{permission_key.replace('.', '_')}", role_key, permission_key),
+        )
+
+
 def ensure_database_initialized() -> None:
     database_path = _resolve_sqlite_path(get_database_url())
     database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -777,6 +992,7 @@ def ensure_database_initialized() -> None:
         _upsert_schema_version(connection)
         _seed_default_workflow_roles(connection)
         _seed_additional_workflow_roles(connection)
+        _seed_default_auth_model(connection)
         for statement in INDEX_STATEMENTS:
             connection.execute(statement)
         connection.commit()
