@@ -493,8 +493,27 @@ class RuntimeConfigItemPayload(BaseModel):
     updated_at: str
 
 
+class RuntimeConfigEventPayload(BaseModel):
+    id: str
+    config_scope: str
+    config_key: str
+    action_type: str
+    old_value: str
+    new_value: str
+    value_type: str
+    description: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+
+
 class RuntimeConfigListResponse(BaseModel):
     configs: list[RuntimeConfigItemPayload]
+
+
+class RuntimeConfigEventListResponse(BaseModel):
+    events: list[RuntimeConfigEventPayload]
 
 
 class RuntimeConfigUpsertRequest(BaseModel):

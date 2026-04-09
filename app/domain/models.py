@@ -409,6 +409,40 @@ class RuntimeConfigRecord(TypedDict):
     ext_data5: str
 
 
+class RuntimeConfigEventRecord(TypedDict):
+    """
+    运行时配置变更事件持久化记录。
+
+    这是什么：
+    - 数据库中的运行时配置变更审计行结构。
+
+    做什么：
+    - 记录配置项的创建、更新动作，以及变更前后值和操作者。
+
+    为什么这么做：
+    - 配置中心只有当前值不够，治理场景还需要回看是谁在什么时候改了什么，
+      否则策略中心无法满足审计和排障需求。
+    """
+
+    id: str
+    config_scope: str
+    config_key: str
+    action_type: str
+    old_value: str
+    new_value: str
+    value_type: str
+    description: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
 class WorkflowRoleRecord(TypedDict):
     """
     工作流角色持久化记录。

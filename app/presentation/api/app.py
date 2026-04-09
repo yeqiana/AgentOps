@@ -75,6 +75,8 @@ from app.presentation.api.schemas import (
     RouteDecisionStatPayload,
     RouteDecisionStatsResponse,
     RuntimeConfigItemPayload,
+    RuntimeConfigEventListResponse,
+    RuntimeConfigEventPayload,
     RuntimeConfigListResponse,
     RuntimeConfigUpsertRequest,
     RuntimeConfigUpsertResponse,
@@ -855,6 +857,41 @@ def create_app():
                     updated_at=item["updated_at"],
                 )
                 for item in configs
+            ]
+        )
+
+    @app.get("/config/runtime/events", response_model=RuntimeConfigEventListResponse)
+    def list_runtime_config_events(
+        request: Request,
+        scope: str | None = None,
+        key: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> RuntimeConfigEventListResponse:
+        require_permission(request, "config.read")
+        events = config_service.repository.list_config_events(
+            scope=sanitize_text(scope or "") or None,
+            key=sanitize_text(key or "") or None,
+            limit=max(1, min(limit, 200)),
+            offset=max(0, offset),
+        )
+        return RuntimeConfigEventListResponse(
+            events=[
+                RuntimeConfigEventPayload(
+                    id=item["id"],
+                    config_scope=item["config_scope"],
+                    config_key=item["config_key"],
+                    action_type=item["action_type"],
+                    old_value=item["old_value"],
+                    new_value=item["new_value"],
+                    value_type=item["value_type"],
+                    description=item["description"],
+                    created_by=item["created_by"],
+                    updated_by=item["updated_by"],
+                    created_at=item["created_at"],
+                    updated_at=item["updated_at"],
+                )
+                for item in events
             ]
         )
 
