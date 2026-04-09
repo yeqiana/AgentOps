@@ -46,8 +46,10 @@ from app.presentation.api.middleware.trace import TraceMiddleware
 from app.presentation.api.schemas import (
     AuthMeResponse,
     AuthPermissionPayload,
+    AuthPermissionMatrixResponse,
     AuthProfilePayload,
     AuthRoleListResponse,
+    AuthRolePermissionMatrixItemPayload,
     AuthRolePayload,
     AuthSubjectRoleAssignRequest,
     AuthSubjectRoleAssignResponse,
@@ -314,6 +316,22 @@ def create_app():
                 for item in permissions
             ],
         )
+
+    @app.get("/auth/permissions/matrix", response_model=AuthPermissionMatrixResponse)
+    def get_auth_permission_matrix(request: Request) -> AuthPermissionMatrixResponse:
+        require_permission(request, "auth.read")
+        roles = auth_service.list_roles()
+        matrix = []
+        for role in roles:
+            permissions = auth_service.role_permission_repository.list_by_role_keys([role["role_key"]])
+            matrix.append(
+                AuthRolePermissionMatrixItemPayload(
+                    role_key=role["role_key"],
+                    role_name=role["role_name"],
+                    permissions=sorted({item["permission_key"] for item in permissions}),
+                )
+            )
+        return AuthPermissionMatrixResponse(matrix=matrix)
 
     @app.put("/auth/subjects/{auth_subject}/roles", response_model=AuthSubjectRoleAssignResponse, responses={400: {"model": ErrorResponse}, 403: {"model": ErrorResponse}})
     def assign_subject_roles(auth_subject: str, payload: AuthSubjectRoleAssignRequest, request: Request) -> AuthSubjectRoleAssignResponse:
