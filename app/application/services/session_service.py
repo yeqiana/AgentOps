@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.domain.errors import AgentError
-from app.application.agent_service import create_initial_state
+from app.application.agent_service import create_initial_state, parse_input_assets
 from app.domain.models import AgentState, AssetRecord, InputAsset, MessageRecord, RouteDecisionRecord, TaskEventRecord, TaskRecord, ToolResultRecord
 from app.infrastructure.llm.client import sanitize_text
 from app.infrastructure.persistence.repositories import (
@@ -91,6 +91,23 @@ class SessionService:
             return state
 
         messages = self.message_repository.list_by_session(session_id)
+        state["messages"] = [{"role": message["role"], "content": message["content"]} for message in messages]
+        state["user_id"] = session["user_id"]
+        state["trace_id"] = session["last_trace_id"]
+        return state
+
+    def load_state_excluding_turn(self, session_id: str, excluded_turn_id: str) -> AgentState:
+        session = self.session_repository.get_by_id(session_id)
+        state = create_initial_state()
+        state["session_id"] = session_id
+        if not session:
+            return state
+
+        messages = [
+            message
+            for message in self.message_repository.list_by_session(session_id)
+            if message["turn_id"] != excluded_turn_id
+        ]
         state["messages"] = [{"role": message["role"], "content": message["content"]} for message in messages]
         state["user_id"] = session["user_id"]
         state["trace_id"] = session["last_trace_id"]
@@ -204,6 +221,37 @@ class SessionService:
             "task_events": self.task_event_repository.list_by_task(task_id),
             "tool_results": self.tool_result_repository.list_by_task(task_id),
             "route_decisions": self.route_decision_repository.list_by_task(task_id),
+        }
+
+    def build_retry_submission_context(self, task_id: str) -> dict[str, object] | None:
+        task_bundle = self.get_task(task_id)
+        if not task_bundle:
+            return None
+
+        task = task_bundle["task"]
+        session = self.session_repository.get_by_id(task["session_id"])
+        if not session:
+            return None
+
+        latest_tasks = self.task_repository.list_by_session(task["session_id"], limit=1, offset=0)
+        is_latest_task = bool(latest_tasks and latest_tasks[0]["id"] == task_id)
+
+        state = self.load_state_excluding_turn(task["session_id"], task["turn_id"])
+        input_assets = [self._to_input_asset(asset) for asset in self.asset_repository.list_by_turn(task["session_id"], task["turn_id"])]
+        user_input = sanitize_text(task["user_input"])
+
+        if not input_assets:
+            parsed_user_input, parsed_assets = parse_input_assets(user_input)
+            user_input = parsed_user_input
+            input_assets = parsed_assets
+
+        return {
+            "task": task,
+            "session": session,
+            "state": state,
+            "user_input": user_input,
+            "input_assets": input_assets,
+            "is_latest_task": is_latest_task,
         }
 
     def cancel_task(self, task_id: str, *, updated_by: str, message: str = "任务已取消。") -> dict[str, object] | None:
@@ -357,6 +405,26 @@ class SessionService:
             "ext_data4": "",
             "ext_data5": "",
         }
+
+    def _to_input_asset(self, asset: AssetRecord) -> InputAsset:
+        input_asset: InputAsset = {
+            "kind": asset["kind"],  # type: ignore[assignment]
+            "name": asset["name"],
+            "content": asset["content"],
+            "source": asset["source"],
+            "storage_mode": asset["storage_mode"],  # type: ignore[assignment]
+        }
+        if asset["locator"]:
+            input_asset["locator"] = asset["locator"]
+            if asset["storage_mode"] == "local_path":
+                input_asset["local_path"] = asset["locator"]
+            elif asset["storage_mode"] == "url":
+                input_asset["url"] = asset["locator"]
+            elif asset["storage_mode"] == "object_uri":
+                input_asset["locator"] = asset["locator"]
+        if asset["mime_type"]:
+            input_asset["mime_type"] = asset["mime_type"]
+        return input_asset
 
     def _to_task_record(self, state: AgentState, *, status: str, error_message: str) -> TaskRecord:
         timestamp = _now_iso()
