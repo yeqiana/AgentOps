@@ -85,9 +85,13 @@ from app.presentation.api.schemas import (
     RoutingDecisionRulePayload,
     RoutingRulePayload,
     SessionListResponse,
+    SessionPayload,
     SecurityConfigPayload,
     SecurityConfigResponse,
+    MessagePayload,
     SessionResponse,
+    SessionSummaryPayload,
+    SessionSummaryResponse,
     TaskListResponse,
     TaskEventListResponse,
     TaskEventPayload,
@@ -598,6 +602,27 @@ def create_app():
         if not bundle["session"]:
             raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
         return SessionResponse(**bundle)
+
+    @app.get("/sessions/{session_id}/summary", response_model=SessionSummaryResponse, responses={404: {"model": ErrorResponse}})
+    def get_session_summary(session_id: str, request: Request, task_limit: int = 20, task_offset: int = 0) -> SessionSummaryResponse:
+        require_permission(request, "session.read")
+        normalized_session_id = sanitize_text(session_id)
+        bundle = session_service.get_session_bundle(normalized_session_id)
+        if not bundle["session"]:
+            raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
+        tasks = session_service.list_tasks_by_session(
+            normalized_session_id,
+            limit=max(1, min(task_limit, 100)),
+            offset=max(0, task_offset),
+        )
+        return SessionSummaryResponse(
+            summary=SessionSummaryPayload(
+                session=SessionPayload(**bundle["session"]),
+                messages=[MessagePayload(**item) for item in bundle["messages"]],
+                assets=[AssetPayload(**item) for item in bundle["assets"]],
+                tasks=[TaskPayload(**item["task"]) for item in tasks],
+            )
+        )
 
     @app.get("/sessions/{session_id}/assets", response_model=AssetListResponse, responses={404: {"model": ErrorResponse}})
     def list_assets_by_session(session_id: str, request: Request) -> AssetListResponse:

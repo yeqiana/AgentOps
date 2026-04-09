@@ -120,6 +120,17 @@ class SessionListResponse(BaseModel):
     sessions: list[SessionPayload]
 
 
+class SessionSummaryPayload(BaseModel):
+    session: SessionPayload
+    messages: list[MessagePayload] = Field(default_factory=list)
+    assets: list[AssetPayload] = Field(default_factory=list)
+    tasks: list[TaskPayload] = Field(default_factory=list)
+
+
+class SessionSummaryResponse(BaseModel):
+    summary: SessionSummaryPayload
+
+
 class AssetResponse(BaseModel):
     asset: AssetPayload
 

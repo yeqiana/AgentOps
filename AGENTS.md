@@ -78,6 +78,7 @@
   - 异步任务取消：`/tasks/{task_id}/cancel`
   - 异步任务重试：`/tasks/{task_id}/retry`
   - 任务聚合摘要：`/tasks/{task_id}/summary`
+  - 会话聚合摘要：`/sessions/{session_id}/summary`
   - 任务事件持久化与查询：`biz_task_event`、`/tasks/{task_id}/events`
 - 阶段 2 后续继续建设：
   - 失败恢复增强

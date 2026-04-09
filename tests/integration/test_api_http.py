@@ -624,6 +624,14 @@ class ApiHttpTests(unittest.TestCase):
         self.assertGreaterEqual(len(filtered_routes_payload["route_decisions"]), 1)
         self.assertEqual(filtered_routes_payload["route_decisions"][0]["trace_id"], payload["trace_id"])
 
+        session_summary_response = self.client.get(f"/sessions/{payload['session_id']}/summary")
+        self.assertEqual(session_summary_response.status_code, 200)
+        session_summary = session_summary_response.json()["summary"]
+        self.assertEqual(session_summary["session"]["id"], payload["session_id"])
+        self.assertGreaterEqual(len(session_summary["messages"]), 2)
+        self.assertGreaterEqual(len(session_summary["tasks"]), 1)
+        self.assertEqual(session_summary["tasks"][0]["id"], payload["task_id"])
+
         tasks_response = self.client.get("/tasks?status=completed")
         self.assertEqual(tasks_response.status_code, 200)
         tasks_payload = tasks_response.json()
