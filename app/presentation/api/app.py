@@ -97,6 +97,9 @@ from app.presentation.api.schemas import (
     TaskEventPayload,
     TaskPayload,
     TaskResponse,
+    TaskStatsPayload,
+    TaskStatsResponse,
+    TaskStatusStatPayload,
     TaskSummaryPayload,
     TaskSummaryResponse,
     ToolExecuteRequest,
@@ -916,6 +919,25 @@ def create_app():
             offset=normalized_offset,
         )
         return TaskListResponse(tasks=[TaskResponse(**task) for task in tasks])
+
+    @app.get("/tasks/stats", response_model=TaskStatsResponse)
+    def get_task_stats(request: Request, session_id: str | None = None) -> TaskStatsResponse:
+        require_permission(request, "task.read")
+        normalized_session_id = sanitize_text(session_id or "") or None
+        stats = session_service.list_task_status_stats(session_id=normalized_session_id)
+        return TaskStatsResponse(
+            summary=TaskStatsPayload(
+                session_id=normalized_session_id,
+                stats=[
+                    TaskStatusStatPayload(
+                        status=item["status"],
+                        task_count=item["task_count"],
+                        last_updated_at=item["last_updated_at"] or "",
+                    )
+                    for item in stats
+                ],
+            )
+        )
 
     @app.get("/sessions/{session_id}/tasks", response_model=TaskListResponse, responses={404: {"model": ErrorResponse}})
     def list_tasks_by_session(session_id: str, request: Request, limit: int = 20, offset: int = 0) -> TaskListResponse:

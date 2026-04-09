@@ -377,6 +377,26 @@ class SessionService:
             for task in tasks
         ]
 
+    def list_task_status_stats(
+        self,
+        *,
+        session_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        """
+        查询任务状态聚合统计。
+
+        What this is:
+        - 控制台、运维页和监控接口复用的任务状态统计服务方法。
+
+        What it does:
+        - 返回每种任务状态的数量和该状态最近一次更新时间。
+
+        Why this is done this way:
+        - 任务列表接口适合排查单条任务，但状态分布更适合作为聚合能力对外暴露，
+          这样后续控制台可以直接消费统一格式的统计结果。
+        """
+        return self.task_repository.list_status_stats(session_id=session_id)
+
     def _to_asset_record(self, state: AgentState, asset: InputAsset) -> AssetRecord:
         locator = asset.get("locator", asset.get("url", asset.get("local_path", "")))
         mime_type = asset.get("mime_type", "")

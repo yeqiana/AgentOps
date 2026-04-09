@@ -16,7 +16,7 @@
 
 当前阶段：
 - 阶段 1：已完成
-- 阶段 2：开发中，当前进度约 `96%`
+- 阶段 2：开发中，当前进度约 `97%`
 - 阶段 3：规划中
 
 ## 当前能力
@@ -29,6 +29,7 @@
 - 异步任务运行时快照：`GET /tasks/runtime`
 - 异步任务取消：`POST /tasks/{task_id}/cancel`
 - 异步任务重试：`POST /tasks/{task_id}/retry`
+- 任务状态统计：`GET /tasks/stats`
 - 任务聚合摘要：`GET /tasks/{task_id}/summary`
 - 会话聚合摘要：`GET /sessions/{session_id}/summary`
 - 任务事件查询：`GET /tasks/{task_id}/events`
@@ -122,6 +123,7 @@ docs/
 - `POST /chat/stream`
 - `POST /tasks/submit`
 - `GET /tasks`
+- `GET /tasks/stats`
 - `GET /tasks/runtime`
 - `POST /tasks/{task_id}/cancel`
 - `POST /tasks/{task_id}/retry`

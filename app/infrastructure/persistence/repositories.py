@@ -948,6 +948,43 @@ class SQLiteTaskRepository:
             rows = connection.execute(query, tuple(parameters)).fetchall()
             return [dict(row) for row in rows]
 
+    def list_status_stats(
+        self,
+        *,
+        session_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        """
+        聚合任务状态统计。
+
+        What this is:
+        - 面向控制台和运维视图的任务状态聚合查询。
+
+        What it does:
+        - 按任务状态分组统计数量，并返回该状态最近一次更新时间。
+
+        Why this is done this way:
+        - 前端和运维接口更需要“状态分布”而不是扫描全量任务后自行聚合，
+          把聚合逻辑下沉到仓储层可以减少重复查询和无效传输。
+        """
+        query = f"""
+            SELECT
+                status,
+                COUNT(*) AS task_count,
+                MAX(updated_at) AS last_updated_at
+            FROM {TABLE_BIZ_TASK}
+        """
+        parameters: list[object] = []
+        if session_id:
+            query += " WHERE session_id = ?"
+            parameters.append(session_id)
+        query += """
+            GROUP BY status
+            ORDER BY task_count DESC, last_updated_at DESC
+        """
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+            return [dict(row) for row in rows]
+
 
 class SQLiteTaskEventRepository:
     def create(self, event: TaskEventRecord) -> None:

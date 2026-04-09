@@ -493,6 +493,48 @@ class ApiHttpTests(unittest.TestCase):
         self.assertGreaterEqual(len(summary["route_decisions"]), 1)
         self.assertEqual(summary["alerts"][0]["event_code"], "task_summary_test_alert")
 
+    def test_task_stats_endpoint_returns_grouped_status_counts(self) -> None:
+        first_response = self.client.post(
+            "/chat",
+            json={
+                "message": "甯垜鍐欎竴鍙ョ畝鐭殑鑷垜浠嬬粛",
+                "user_name": "task-stat-user",
+                "session_title": "Task Stats Session",
+            },
+        )
+        self.assertEqual(first_response.status_code, 200)
+        first_payload = first_response.json()
+
+        second_response = self.client.post(
+            "/assets/upload",
+            files={"file": ("note.txt", b"hello upload", "text/plain")},
+            data={
+                "kind": "file",
+                "prompt": "璇锋€荤粨鏂囨。",
+                "session_id": first_payload["session_id"],
+            },
+        )
+        self.assertEqual(second_response.status_code, 200)
+
+        stats_response = self.client.get("/tasks/stats")
+        self.assertEqual(stats_response.status_code, 200)
+        summary = stats_response.json()["summary"]
+        self.assertIsNone(summary["session_id"])
+        self.assertGreaterEqual(len(summary["stats"]), 1)
+
+        stats_map = {item["status"]: item for item in summary["stats"]}
+        self.assertIn("completed", stats_map)
+        self.assertGreaterEqual(stats_map["completed"]["task_count"], 2)
+        self.assertTrue(stats_map["completed"]["last_updated_at"])
+
+        filtered_response = self.client.get(f"/tasks/stats?session_id={first_payload['session_id']}")
+        self.assertEqual(filtered_response.status_code, 200)
+        filtered_summary = filtered_response.json()["summary"]
+        self.assertEqual(filtered_summary["session_id"], first_payload["session_id"])
+        filtered_map = {item["status"]: item for item in filtered_summary["stats"]}
+        self.assertIn("completed", filtered_map)
+        self.assertGreaterEqual(filtered_map["completed"]["task_count"], 2)
+
     def test_alert_endpoints_can_query_persisted_alerts(self) -> None:
         alert = get_alert_service().create_alert(
             trace_id="trace_alert_test",
