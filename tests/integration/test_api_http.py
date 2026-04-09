@@ -197,6 +197,23 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(template_map["deliberation_enabled"]["value_type"], "bool")
         self.assertEqual(template_map["contextual_message_threshold"]["value_type"], "int")
 
+    def test_routing_preview_endpoint_returns_predicted_route(self) -> None:
+        response = self.client.post(
+            "/routing/preview",
+            json={
+                "input": "/image 这是一张测试图片",
+                "message_count": 3,
+                "route_source": "console_preview",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["user_input"], "这是一张测试图片")
+        self.assertEqual(payload["route_name"], "image_analysis")
+        self.assertTrue(payload["route_reason"])
+        self.assertEqual(payload["route_source"], "console_preview")
+        self.assertEqual(payload["input_assets"][0]["kind"], "image")
+
     def test_runtime_config_rejects_unknown_routing_key(self) -> None:
         response = self.client.put(
             "/config/runtime",
