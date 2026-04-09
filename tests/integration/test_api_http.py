@@ -372,6 +372,51 @@ class ApiHttpTests(unittest.TestCase):
         workflow_payload = workflow_response.json()["workflow"]
         self.assertEqual(workflow_payload["critic_role"]["name"], "数据库批评代理")
 
+        events_response = self.client.get("/config/runtime/events?scope=workflow&key=critic_role_name")
+        self.assertEqual(events_response.status_code, 200)
+        events_payload = events_response.json()["events"]
+        self.assertGreaterEqual(len(events_payload), 1)
+        self.assertEqual(events_payload[0]["config_scope"], "workflow")
+        self.assertEqual(events_payload[0]["config_key"], "critic_role_name")
+        self.assertEqual(events_payload[0]["action_type"], "create")
+        self.assertEqual(events_payload[0]["new_value"], "数据库批评代理")
+
+    def test_runtime_config_events_capture_create_and_update(self) -> None:
+        create_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "workflow",
+                "config_key": "execution_mode",
+                "config_value": "standard",
+                "value_type": "str",
+                "description": "create event",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+
+        update_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "workflow",
+                "config_key": "execution_mode",
+                "config_value": "delegated",
+                "value_type": "str",
+                "description": "update event",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(update_response.status_code, 200)
+
+        events_response = self.client.get("/config/runtime/events?scope=workflow&key=execution_mode")
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.json()["events"]
+        self.assertGreaterEqual(len(events), 2)
+        self.assertEqual(events[0]["action_type"], "update")
+        self.assertEqual(events[0]["old_value"], "standard")
+        self.assertEqual(events[0]["new_value"], "delegated")
+        self.assertEqual(events[1]["action_type"], "create")
+
     def test_runtime_config_endpoints_affect_security_snapshot(self) -> None:
         put_response = self.client.put(
             "/config/runtime",

@@ -16,7 +16,7 @@
 
 当前阶段：
 - 阶段 1：已完成
-- 阶段 2：开发中，当前进度约 `97%`
+- 阶段 2：开发中，当前进度约 `98%`
 - 阶段 3：规划中
 
 ## 当前能力
@@ -68,6 +68,7 @@
 - trace 聚合摘要查询
 - 模型与工具的重试、熔断、降级
 - 数据库驱动运行时配置中心
+- 运行时配置变更审计与回查
 - 数据库驱动角色注册
 
 ## 快速开始
@@ -148,6 +149,7 @@ docs/
 - `GET /routes`
 - `GET /routes/stats`
 - `GET /config/runtime`
+- `GET /config/runtime/events`
 - `PUT /config/runtime`
 - `GET /security/config`
 - `GET /recovery/config`

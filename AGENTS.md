@@ -69,6 +69,7 @@
   - 配置化恢复策略
   - `router / debate / arbitration / critic / review` 最小多角色编排
   - 数据库驱动运行时配置中心
+  - 运行时配置变更审计与回查
   - 数据库驱动角色注册
   - 正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
   - 可切换执行协议：`delegated / standard`

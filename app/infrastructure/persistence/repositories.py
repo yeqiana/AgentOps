@@ -27,6 +27,7 @@ from app.domain.models import (
     MessageRecord,
     RouteDecisionRecord,
     RuntimeConfigRecord,
+    RuntimeConfigEventRecord,
     SessionRecord,
     TaskEventRecord,
     TaskRecord,
@@ -44,6 +45,7 @@ from app.infrastructure.persistence.database import (
     TABLE_BIZ_TASK_EVENT,
     TABLE_BIZ_TOOL_RESULT,
     TABLE_SYS_RUNTIME_CONFIG,
+    TABLE_SYS_RUNTIME_CONFIG_EVENT,
     TABLE_SYS_REQUEST_TRACE,
     TABLE_SYS_USER,
     TABLE_SYS_WORKFLOW_ROLE,
@@ -264,16 +266,24 @@ class SQLiteRuntimeConfigRepository:
         config_id = f"runtime_config_{uuid.uuid4().hex}"
         with get_connection() as connection:
             existing = connection.execute(
-                f"SELECT id, created_at, created_by FROM {TABLE_SYS_RUNTIME_CONFIG} WHERE config_scope = ? AND config_key = ?",
+                f"""
+                SELECT id, created_at, created_by, config_value
+                FROM {TABLE_SYS_RUNTIME_CONFIG}
+                WHERE config_scope = ? AND config_key = ?
+                """,
                 (scope, key),
             ).fetchone()
             if existing:
                 config_id = existing["id"]
                 created_at = existing["created_at"]
                 created_by = existing["created_by"]
+                old_value = existing["config_value"]
+                action_type = "update"
             else:
                 created_at = timestamp
                 created_by = updated_by
+                old_value = ""
+                action_type = "create"
 
             connection.execute(
                 f"""
@@ -309,6 +319,34 @@ class SQLiteRuntimeConfigRepository:
                     "",
                 ),
             )
+            connection.execute(
+                f"""
+                INSERT INTO {TABLE_SYS_RUNTIME_CONFIG_EVENT} (
+                    id, config_scope, config_key, action_type, old_value, new_value, value_type, description,
+                    created_by, updated_by, created_at, updated_at,
+                    ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"runtime_config_event_{uuid.uuid4().hex}",
+                    scope,
+                    key,
+                    action_type,
+                    old_value,
+                    value,
+                    value_type,
+                    description,
+                    updated_by,
+                    updated_by,
+                    timestamp,
+                    timestamp,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                ),
+            )
             row = connection.execute(
                 f"""
                 SELECT id, config_scope, config_key, config_value, value_type, config_source, description,
@@ -320,6 +358,36 @@ class SQLiteRuntimeConfigRepository:
                 (scope, key),
             ).fetchone()
             return dict(row)
+
+    def list_config_events(
+        self,
+        *,
+        scope: str | None = None,
+        key: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[RuntimeConfigEventRecord]:
+        query = f"""
+            SELECT id, config_scope, config_key, action_type, old_value, new_value, value_type, description,
+                   created_by, updated_by, created_at, updated_at,
+                   ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+            FROM {TABLE_SYS_RUNTIME_CONFIG_EVENT}
+        """
+        clauses: list[str] = []
+        parameters: list[object] = []
+        if scope:
+            clauses.append("config_scope = ?")
+            parameters.append(scope)
+        if key:
+            clauses.append("config_key = ?")
+            parameters.append(key)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        parameters.extend([limit, offset])
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+            return [dict(row) for row in rows]
 
 
 class SQLiteWorkflowRoleRepository:
