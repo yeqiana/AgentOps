@@ -16,7 +16,7 @@
 
 当前阶段：
 - 阶段 1：已完成
-- 阶段 2：开发中，当前进度约 `95%`
+- 阶段 2：开发中，当前进度约 `96%`
 - 阶段 3：规划中
 
 ## 当前能力
@@ -30,6 +30,7 @@
 - 异步任务取消：`POST /tasks/{task_id}/cancel`
 - 异步任务重试：`POST /tasks/{task_id}/retry`
 - 任务聚合摘要：`GET /tasks/{task_id}/summary`
+- 会话聚合摘要：`GET /sessions/{session_id}/summary`
 - 任务事件查询：`GET /tasks/{task_id}/events`
 - 多模型接入：OpenAI 兼容协议 + `mock`
 - 多模态输入：文本、图片、音频、视频、文件
@@ -130,6 +131,7 @@ docs/
 - `GET /tasks/{task_id}/routes`
 - `GET /sessions`
 - `GET /sessions/{session_id}`
+- `GET /sessions/{session_id}/summary`
 - `GET /sessions/{session_id}/assets`
 - `GET /sessions/{session_id}/tasks`
 - `GET /assets/{asset_id}`
