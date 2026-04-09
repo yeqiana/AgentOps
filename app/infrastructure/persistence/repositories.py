@@ -577,6 +577,48 @@ class SQLiteAlertEventRepository:
             ).fetchone()
             return dict(row) if row else None
 
+    def list_stats(
+        self,
+        *,
+        source_type: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        """
+        聚合告警统计。
+
+        What this is:
+        - 面向控制台和运维视图的告警聚合查询。
+
+        What it does:
+        - 按严重级别和来源类型分组统计告警数量，并返回最近一条告警时间。
+
+        Why this is done this way:
+        - 告警列表适合排查明细，但控制台更需要趋势和分布摘要，
+          将统计下沉到仓储层可以避免上层重复聚合。
+        """
+        query = f"""
+            SELECT
+                severity,
+                source_type,
+                COUNT(*) AS alert_count,
+                MAX(created_at) AS last_created_at
+            FROM {TABLE_SYS_ALERT_EVENT}
+        """
+        parameters: list[object] = []
+        if source_type:
+            query += " WHERE source_type = ?"
+            parameters.append(source_type)
+        query += """
+            GROUP BY severity, source_type
+            ORDER BY alert_count DESC, last_created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        parameters.extend([limit, offset])
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+            return [dict(row) for row in rows]
+
 
 class SQLiteAuthRoleRepository:
     def list_roles(self, *, only_enabled: bool = False) -> list[AuthRoleRecord]:

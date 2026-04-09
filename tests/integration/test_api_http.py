@@ -603,6 +603,41 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(detail_payload["id"], alert["id"])
         self.assertEqual(detail_payload["event_code"], "llm_retry_exhausted")
 
+    def test_alert_stats_endpoint_returns_grouped_alert_counts(self) -> None:
+        get_alert_service().create_alert(
+            trace_id="trace_alert_stat_1",
+            source_type="llm",
+            source_name="mock",
+            severity="warning",
+            event_code="alert_stat_warning",
+            message="warning alert",
+            payload={"attempts": 1},
+        )
+        get_alert_service().create_alert(
+            trace_id="trace_alert_stat_2",
+            source_type="tool",
+            source_name="ffmpeg",
+            severity="error",
+            event_code="alert_stat_error",
+            message="error alert",
+            payload={"attempts": 2},
+        )
+
+        stats_response = self.client.get("/alerts/stats")
+        self.assertEqual(stats_response.status_code, 200)
+        stats = stats_response.json()["stats"]
+        self.assertGreaterEqual(len(stats), 2)
+        stats_map = {(item["severity"], item["source_type"]): item for item in stats}
+        self.assertIn(("warning", "llm"), stats_map)
+        self.assertIn(("error", "tool"), stats_map)
+        self.assertGreaterEqual(stats_map[("warning", "llm")]["alert_count"], 1)
+        self.assertTrue(stats_map[("error", "tool")]["last_created_at"])
+
+        filtered_response = self.client.get("/alerts/stats?source_type=llm")
+        self.assertEqual(filtered_response.status_code, 200)
+        filtered_stats = filtered_response.json()["stats"]
+        self.assertTrue(all(item["source_type"] == "llm" for item in filtered_stats))
+
     def test_trace_alert_endpoint_returns_alerts_for_trace(self) -> None:
         get_alert_service().create_alert(
             trace_id="trace_linked_alert",

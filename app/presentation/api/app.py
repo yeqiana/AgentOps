@@ -64,6 +64,8 @@ from app.presentation.api.schemas import (
     AlertEventListResponse,
     AlertEventPayload,
     AlertEventResponse,
+    AlertStatPayload,
+    AlertStatsResponse,
     AssetListResponse,
     AssetPayload,
     AssetResponse,
@@ -1313,6 +1315,31 @@ def create_app():
                     updated_at=item["updated_at"],
                 )
                 for item in alerts
+            ]
+        )
+
+    @app.get("/alerts/stats", response_model=AlertStatsResponse)
+    def list_alert_stats(
+        request: Request,
+        source_type: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> AlertStatsResponse:
+        require_permission(request, "alert.read")
+        stats = alert_service.list_alert_stats(
+            source_type=sanitize_text(source_type or "") or None,
+            limit=max(1, min(limit, 100)),
+            offset=max(0, offset),
+        )
+        return AlertStatsResponse(
+            stats=[
+                AlertStatPayload(
+                    severity=item["severity"],
+                    source_type=item["source_type"],
+                    alert_count=item["alert_count"],
+                    last_created_at=item["last_created_at"] or "",
+                )
+                for item in stats
             ]
         )
 

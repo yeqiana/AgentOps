@@ -160,6 +160,7 @@ docs/
 - `GET /traces/{trace_id}/summary`
 - `GET /traces/{trace_id}/alerts`
 - `GET /alerts`
+- `GET /alerts/stats`
 - `GET /alerts/{alert_id}`
 
 ## 数据库概览

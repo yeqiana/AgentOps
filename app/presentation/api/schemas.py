@@ -424,6 +424,17 @@ class AlertEventListResponse(BaseModel):
     alerts: list[AlertEventPayload]
 
 
+class AlertStatPayload(BaseModel):
+    severity: str
+    source_type: str
+    alert_count: int
+    last_created_at: str = ""
+
+
+class AlertStatsResponse(BaseModel):
+    stats: list[AlertStatPayload] = Field(default_factory=list)
+
+
 class WorkflowRolePayload(BaseModel):
     role_key: str = ""
     name: str

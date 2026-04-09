@@ -41,3 +41,16 @@ class AlertService:
 
     def get_alert(self, alert_id: str) -> AlertEventRecord | None:
         return self.service.get_alert(alert_id)
+
+    def list_alert_stats(
+        self,
+        *,
+        source_type: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        return self.service.repository.list_stats(
+            source_type=source_type,
+            limit=limit,
+            offset=offset,
+        )
