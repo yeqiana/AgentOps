@@ -1421,3 +1421,66 @@ class SQLiteTraceRepository:
             if not row:
                 return None
             return {**dict(row), "rate_limited": bool(row["rate_limited"])}
+
+    def list_stats(
+        self,
+        *,
+        method: str | None = None,
+        path: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        """
+        Trace 缁熻鑱氬悎鏌ヨ銆?
+
+        What this is:
+        - 闈㈠悜鎺у埗鍙板拰鎺掗殰瑙嗗浘鐨勮姹傝拷韪粺璁¤仛鍚堟煡璇€?
+
+        What it does:
+        - 鎸?HTTP 鏂规硶銆佽姹傝矾寰勩€佺姸鎬佺爜鍜岄檺娴佹爣璁板垎缁勶紝
+          缁熻璇锋眰鏁伴噺骞惰繑鍥炴渶杩戜竴娆″紑濮嬫椂闂淬€?
+
+        Why this is done this way:
+        - trace 鏄庣粏閫傚悎鍗曟潯鎺掗殰锛屼絾鎺у埗鍙板拰杩愮淮鏇撮渶瑕
+          鎵归噺鍒嗗竷鎽樿锛屽湪浠撳偍灞傚仛聚合鑳介伩鍏嶄笂灞傞噸澶嶈仛鍚堛€?
+        """
+        filters: list[str] = []
+        parameters: list[object] = []
+        if method:
+            filters.append("method = ?")
+            parameters.append(method)
+        if path:
+            filters.append("path = ?")
+            parameters.append(path)
+        where_clause = ""
+        if filters:
+            where_clause = "WHERE " + " AND ".join(filters)
+
+        query = f"""
+            SELECT
+                method,
+                path,
+                status_code,
+                rate_limited,
+                COUNT(*) AS trace_count,
+                MAX(started_at) AS last_started_at
+            FROM {TABLE_SYS_REQUEST_TRACE}
+            {where_clause}
+            GROUP BY method, path, status_code, rate_limited
+            ORDER BY last_started_at DESC, trace_count DESC
+            LIMIT ? OFFSET ?
+        """
+        parameters.extend([limit, offset])
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+        return [
+            {
+                "method": row["method"],
+                "path": row["path"],
+                "status_code": row["status_code"],
+                "rate_limited": bool(row["rate_limited"]),
+                "trace_count": row["trace_count"],
+                "last_started_at": row["last_started_at"] or "",
+            }
+            for row in rows
+        ]

@@ -108,3 +108,31 @@ class TraceService:
 
     def get_trace(self, trace_id: str):
         return self.repository.get_by_trace_id(trace_id)
+
+    def list_trace_stats(
+        self,
+        *,
+        method: str | None = None,
+        path: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        """
+        Expose grouped trace statistics for control-plane APIs.
+
+        What this is:
+        - A small facade over trace aggregate queries.
+
+        What it does:
+        - Returns grouped trace counts by request method/path/status.
+
+        Why this is done this way:
+        - API handlers should continue depending on the trace service instead of
+          reaching directly into persistence repositories.
+        """
+        return self.repository.list_stats(
+            method=method,
+            path=path,
+            limit=limit,
+            offset=offset,
+        )

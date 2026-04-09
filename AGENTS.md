@@ -65,6 +65,7 @@
   - 角色权限矩阵查询
   - 限流与幂等
   - trace service
+  - trace 统计聚合查询：`/traces/stats`
   - 恢复告警记录、查询与 trace 关联查询
   - trace 聚合摘要查询：`/traces/{trace_id}/summary`
   - 告警统计聚合：`/alerts/stats`

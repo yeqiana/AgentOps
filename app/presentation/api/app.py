@@ -119,6 +119,8 @@ from app.presentation.api.schemas import (
     TraceSummaryPayload,
     TraceSummaryResponse,
     TraceResponse,
+    TraceStatsResponse,
+    TraceStatPayload,
     UploadAssetResponse,
     WorkflowConfigPayload,
     WorkflowConfigResponse,
@@ -1190,6 +1192,35 @@ def create_app():
                     last_trace_id=item["last_trace_id"],
                     last_task_id=item["last_task_id"],
                     last_decided_at=item["last_decided_at"],
+                )
+                for item in stats
+            ]
+        )
+
+    @app.get("/traces/stats", response_model=TraceStatsResponse)
+    def list_trace_stats(
+        request: Request,
+        method: str | None = None,
+        path: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> TraceStatsResponse:
+        require_permission(request, "trace.read")
+        stats = trace_service.list_trace_stats(
+            method=sanitize_text(method or "") or None,
+            path=sanitize_text(path or "") or None,
+            limit=max(1, min(limit, 100)),
+            offset=max(0, offset),
+        )
+        return TraceStatsResponse(
+            stats=[
+                TraceStatPayload(
+                    method=item["method"],
+                    path=item["path"],
+                    status_code=item["status_code"],
+                    rate_limited=item["rate_limited"],
+                    trace_count=item["trace_count"],
+                    last_started_at=item["last_started_at"] or "",
                 )
                 for item in stats
             ]

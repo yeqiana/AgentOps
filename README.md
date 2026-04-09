@@ -65,6 +65,7 @@
 - 限流与幂等
 - trace 查询
 - 告警记录、查询与 trace 关联查询
+- trace 统计聚合查询
 - trace 聚合摘要查询
 - 模型与工具的重试、熔断、降级
 - 数据库驱动运行时配置中心
@@ -157,6 +158,7 @@ docs/
 - `GET /security/config`
 - `GET /recovery/config`
 - `GET /traces/{trace_id}`
+- `GET /traces/stats`
 - `GET /traces/{trace_id}/summary`
 - `GET /traces/{trace_id}/alerts`
 - `GET /alerts`
