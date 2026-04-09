@@ -45,6 +45,17 @@ class AsyncTaskSubmitResponse(BaseModel):
     message: str
 
 
+class AsyncTaskRuntimePayload(BaseModel):
+    max_workers: int
+    active_task_count: int
+    active_task_ids: list[str]
+
+
+class AsyncTaskRuntimeResponse(BaseModel):
+    async_task_enabled: bool
+    runtime: AsyncTaskRuntimePayload
+
+
 class ChatResponse(BaseModel):
     session_id: str
     turn_id: str
@@ -155,6 +166,22 @@ class ToolResultPayload(BaseModel):
     created_at: str = ""
 
 
+class TaskEventPayload(BaseModel):
+    id: str
+    task_id: str
+    session_id: str
+    turn_id: str
+    trace_id: str
+    event_type: str
+    event_message: str
+    event_payload_json: str
+    created_at: str
+
+
+class TaskEventListResponse(BaseModel):
+    task_events: list[TaskEventPayload] = Field(default_factory=list)
+
+
 class RouteDecisionPayload(BaseModel):
     id: str = ""
     task_id: str = ""
@@ -212,6 +239,7 @@ class RoutingConfigResponse(BaseModel):
 
 class TaskResponse(BaseModel):
     task: TaskPayload
+    task_events: list[TaskEventPayload] = Field(default_factory=list)
     tool_results: list[ToolResultPayload]
     route_decisions: list[RouteDecisionPayload] = Field(default_factory=list)
 

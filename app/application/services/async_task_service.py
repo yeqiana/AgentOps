@@ -55,6 +55,9 @@ class AsyncTaskService:
         )
         self.runner.submit(state["task_id"], lambda: self._execute_turn(state))  # type: ignore[index]
 
+    def get_runtime_snapshot(self) -> dict[str, object]:
+        return self.runner.get_runtime_snapshot()
+
     def _execute_turn(self, state: dict[str, object]) -> None:
         self.session_service.mark_task_running(state)  # type: ignore[arg-type]
         try:

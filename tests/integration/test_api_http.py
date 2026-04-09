@@ -551,6 +551,10 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(task_payload["task"]["id"], metadata["task_id"])
 
     def test_async_task_submit_endpoint_queues_and_completes_task(self) -> None:
+        runtime_before = self.client.get("/tasks/runtime")
+        self.assertEqual(runtime_before.status_code, 200)
+        self.assertIn("active_task_count", runtime_before.json()["runtime"])
+
         response = self.client.post(
             "/tasks/submit",
             json={
@@ -578,6 +582,15 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIn(final_status, {"completed", "failed"})
         self.assertEqual(final_task_payload["task"]["id"], payload["task_id"])
         self.assertEqual(final_task_payload["task"]["session_id"], payload["session_id"])
+        self.assertGreaterEqual(len(final_task_payload["task_events"]), 2)
+
+        events_response = self.client.get(f"/tasks/{payload['task_id']}/events")
+        self.assertEqual(events_response.status_code, 200)
+        events_payload = events_response.json()["task_events"]
+        event_types = [item["event_type"] for item in events_payload]
+        self.assertIn("queued", event_types)
+        self.assertIn("running", event_types)
+        self.assertTrue(any(item in {"completed", "failed"} for item in event_types))
 
     def test_task_not_found_returns_structured_error(self) -> None:
         response = self.client.get("/tasks/task_not_exist")

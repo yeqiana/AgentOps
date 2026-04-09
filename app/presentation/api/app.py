@@ -52,6 +52,8 @@ from app.presentation.api.schemas import (
     AuthSubjectRoleAssignRequest,
     AuthSubjectRoleAssignResponse,
     AuthSubjectRolePayload,
+    AsyncTaskRuntimePayload,
+    AsyncTaskRuntimeResponse,
     AsyncTaskSubmitRequest,
     AsyncTaskSubmitResponse,
     AnalyzeAssetRequest,
@@ -84,6 +86,8 @@ from app.presentation.api.schemas import (
     SecurityConfigResponse,
     SessionResponse,
     TaskListResponse,
+    TaskEventListResponse,
+    TaskEventPayload,
     TaskResponse,
     ToolExecuteRequest,
     ToolExecuteResponse,
@@ -406,6 +410,19 @@ def create_app():
             trace_id=current_state["trace_id"],
             status="queued",
             message="异步任务已提交，等待后台执行。",
+        )
+
+    @app.get("/tasks/runtime", response_model=AsyncTaskRuntimeResponse)
+    def get_async_task_runtime(request: Request) -> AsyncTaskRuntimeResponse:
+        require_permission(request, "task.read")
+        snapshot = async_task_service.get_runtime_snapshot()
+        return AsyncTaskRuntimeResponse(
+            async_task_enabled=is_async_task_enabled(),
+            runtime=AsyncTaskRuntimePayload(
+                max_workers=snapshot["max_workers"],
+                active_task_count=snapshot["active_task_count"],
+                active_task_ids=snapshot["active_task_ids"],
+            ),
         )
 
     @app.post(
@@ -811,6 +828,30 @@ def create_app():
         if not task:
             raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
         return TaskResponse(**task)
+
+    @app.get("/tasks/{task_id}/events", response_model=TaskEventListResponse, responses={404: {"model": ErrorResponse}})
+    def get_task_events(task_id: str, request: Request, limit: int = 100, offset: int = 0) -> TaskEventListResponse:
+        require_permission(request, "task.read")
+        task = session_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
+        events = session_service.list_task_events(task_id, limit=max(1, min(limit, 200)), offset=max(0, offset))
+        return TaskEventListResponse(
+            task_events=[
+                TaskEventPayload(
+                    id=item["id"],
+                    task_id=item["task_id"],
+                    session_id=item["session_id"],
+                    turn_id=item["turn_id"],
+                    trace_id=item["trace_id"],
+                    event_type=item["event_type"],
+                    event_message=item["event_message"],
+                    event_payload_json=item["event_payload_json"],
+                    created_at=item["created_at"],
+                )
+                for item in events
+            ]
+        )
 
     @app.get("/tasks/{task_id}/routes", response_model=RouteDecisionListResponse, responses={404: {"model": ErrorResponse}})
     def get_task_routes(task_id: str, request: Request) -> RouteDecisionListResponse:

@@ -245,6 +245,39 @@ class TaskRecord(TypedDict):
     ext_data5: str
 
 
+class TaskEventRecord(TypedDict):
+    """
+    任务事件持久化记录。
+
+    这是什么：
+    - 数据库中的任务生命周期事件行结构。
+
+    做什么：
+    - 保存任务在排队、运行、完成、失败等阶段的事件流。
+
+    为什么这么做：
+    - 仅保存任务最终状态不足以支撑异步任务排障，还需要能回看任务在执行过程中的关键状态变化。
+    """
+
+    id: str
+    task_id: str
+    session_id: str
+    turn_id: str
+    trace_id: str
+    event_type: str
+    event_message: str
+    event_payload_json: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
 class ToolResultRecord(TypedDict):
     """
     工具结果持久化记录。
