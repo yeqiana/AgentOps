@@ -67,6 +67,7 @@
   - trace service
   - 恢复告警记录、查询与 trace 关联查询
   - trace 聚合摘要查询：`/traces/{trace_id}/summary`
+  - 告警统计聚合：`/alerts/stats`
   - 基础重试与熔断降级
   - 配置化恢复策略
   - `router / debate / arbitration / critic / review` 最小多角色编排
