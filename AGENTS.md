@@ -3,8 +3,9 @@
 ## 项目定位
 
 - 这是一个基于 Python、LangGraph 和 OpenAI 兼容协议的 Agent 底座项目
-- 阶段 1 已完成，阶段 2 正在开发
+- 阶段 1 已完成，阶段 2 正在开发，当前进度约 `75% - 80%`
 - 当前重点是治理底座、多 Agent 编排、运行时配置中心、数据库规范和可排障能力
+- 当前已支持 CLI 和 API 的流式对话输出
 
 ## 结构约束
 
@@ -59,6 +60,7 @@
   - 数据库驱动角色注册
   - 正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
   - 可切换执行协议：`delegated / standard`
+  - 流式对话输出：CLI 流式打印，API `SSE` 流式返回
 - 阶段 2 后续继续建设：
   - 失败恢复增强
   - 策略中心深化

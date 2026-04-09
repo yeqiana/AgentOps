@@ -16,8 +16,11 @@ Why this is done this way:
   factory boundary.
 """
 
+import json
+
 from app.application.agent_service import create_initial_state, parse_input_assets
 from app.application.services.alert_service import AlertService
+from app.application.services.chat_service import ChatService
 from app.application.services.config_service import RuntimeConfigService
 from app.application.services.session_service import SessionService
 from app.application.services.task_service import TaskService
@@ -85,7 +88,7 @@ logger = get_logger("presentation.api")
 def create_app():
     try:
         from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import JSONResponse, StreamingResponse
     except ImportError as error:
         raise RuntimeError(
             "未安装 fastapi。请先安装 `fastapi`、`uvicorn` 和 `python-multipart` 后再启动 API。"
@@ -97,6 +100,7 @@ def create_app():
     workflow_role_service = WorkflowRoleService()
     tool_registry = build_default_tool_registry(config_service)
     task_service = TaskService(tool_registry)
+    chat_service = ChatService()
     auth_service = AuthService()
     trace_service = TraceService()
     graph = build_graph()
@@ -241,6 +245,94 @@ def create_app():
             )
             persist_failed_task_if_possible(current_state, unexpected)
             raise unexpected from error
+
+    @app.post(
+        "/chat/stream",
+        responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
+    )
+    def chat_stream(payload: ChatRequest, request: Request):
+        user_input = sanitize_text(payload.message)
+        session_id = sanitize_text(payload.session_id or "")
+        user_name = sanitize_text(payload.user_name) or "api-user"
+        session_title = sanitize_text(payload.session_title) or "API Session"
+        if not user_input:
+            raise ValidationError("message 不能为空。")
+
+        normalized_user_input, input_assets = parse_input_assets(user_input)
+        task_service.tool_registry = current_tool_registry()
+        state = session_service.ensure_session(session_id or None, user_name=user_name, title=session_title)
+        current_state = task_service.prepare_turn_state(
+            state,
+            normalized_user_input,
+            input_assets,
+            trace_id=request.state.trace_id,
+        )
+
+        def encode_event(event_name: str, payload_dict: dict[str, object]) -> str:
+            return f"event: {event_name}\ndata: {json.dumps(payload_dict, ensure_ascii=False)}\n\n"
+
+        def event_stream():
+            try:
+                for event in chat_service.stream_turn_events(current_state):
+                    if event["type"] == "metadata":
+                        yield encode_event(
+                            "metadata",
+                            {
+                                "session_id": event["session_id"],
+                                "turn_id": event["turn_id"],
+                                "task_id": event["task_id"],
+                                "trace_id": event["trace_id"],
+                                "route_name": event["route_name"],
+                                "route_reason": event["route_reason"],
+                                "execution_mode": event["execution_mode"],
+                                "protocol_summary": event["protocol_summary"],
+                            },
+                        )
+                    elif event["type"] == "answer_delta":
+                        yield encode_event("answer_delta", {"delta": event["delta"]})
+                    elif event["type"] == "done":
+                        final_state = event["state"]
+                        session_service.persist_turn(final_state)
+                        trace_service.attach_execution_context(
+                            final_state["trace_id"],
+                            session_id=final_state["session_id"],
+                            turn_id=final_state["turn_id"],
+                            task_id=final_state["task_id"],
+                        )
+                        yield encode_event(
+                            "done",
+                            {
+                                "session_id": final_state["session_id"],
+                                "turn_id": final_state["turn_id"],
+                                "task_id": final_state["task_id"],
+                                "trace_id": final_state["trace_id"],
+                                "answer": final_state["answer"],
+                                "review_status": final_state["review_status"],
+                                "review_summary": final_state["review_summary"],
+                            },
+                        )
+            except ParsingError as error:
+                yield encode_event("error", build_error_response(error).model_dump())
+            except LLMCallError as error:
+                error.with_trace_id(current_state["trace_id"])
+                persist_failed_task_if_possible(current_state, error)
+                yield encode_event("error", build_error_response(error).model_dump())
+            except AgentError as error:
+                error.with_trace_id(current_state["trace_id"])
+                persist_failed_task_if_possible(current_state, error)
+                yield encode_event("error", build_error_response(error).model_dump())
+            except Exception as error:
+                logger.exception("API /chat/stream 发生未预期异常")
+                unexpected = AgentError(
+                    "system",
+                    "unexpected_error",
+                    sanitize_text(str(error)),
+                    trace_id=current_state["trace_id"],
+                )
+                persist_failed_task_if_possible(current_state, unexpected)
+                yield encode_event("error", build_error_response(unexpected).model_dump())
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     @app.get("/sessions", response_model=SessionListResponse)
     def list_sessions(limit: int = 20, offset: int = 0) -> SessionListResponse:
