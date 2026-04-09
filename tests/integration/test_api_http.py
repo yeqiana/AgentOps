@@ -475,6 +475,58 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(trace_payload["session_id"], payload["session_id"])
         self.assertEqual(trace_payload["status_code"], 200)
 
+    def test_trace_stats_endpoint_returns_grouped_trace_counts(self) -> None:
+        trace_service = TraceService()
+        trace_service.begin_request(
+            trace_id="trace_stats_1",
+            request_id="req_trace_stats_1",
+            method="GET",
+            path="/tasks",
+            auth_subject="tester",
+            auth_type="api_key",
+            idempotency_key="",
+        )
+        trace_service.finish_request("trace_stats_1", status_code=200)
+
+        trace_service.begin_request(
+            trace_id="trace_stats_2",
+            request_id="req_trace_stats_2",
+            method="GET",
+            path="/tasks",
+            auth_subject="tester",
+            auth_type="api_key",
+            idempotency_key="",
+        )
+        trace_service.finish_request("trace_stats_2", status_code=200)
+
+        trace_service.begin_request(
+            trace_id="trace_stats_3",
+            request_id="req_trace_stats_3",
+            method="POST",
+            path="/chat",
+            auth_subject="tester",
+            auth_type="api_key",
+            idempotency_key="",
+        )
+        trace_service.finish_request("trace_stats_3", status_code=429, rate_limited=True)
+
+        stats_response = self.client.get("/traces/stats")
+        self.assertEqual(stats_response.status_code, 200)
+        stats = stats_response.json()["stats"]
+        self.assertGreaterEqual(len(stats), 2)
+        stats_map = {(item["method"], item["path"], item["status_code"]): item for item in stats}
+        self.assertIn(("GET", "/tasks", 200), stats_map)
+        self.assertIn(("POST", "/chat", 429), stats_map)
+        self.assertEqual(stats_map[("GET", "/tasks", 200)]["trace_count"], 2)
+        self.assertTrue(stats_map[("POST", "/chat", 429)]["rate_limited"])
+
+        filtered_response = self.client.get("/traces/stats?method=GET&path=/tasks")
+        self.assertEqual(filtered_response.status_code, 200)
+        filtered_stats = filtered_response.json()["stats"]
+        self.assertEqual(len(filtered_stats), 1)
+        self.assertEqual(filtered_stats[0]["method"], "GET")
+        self.assertEqual(filtered_stats[0]["path"], "/tasks")
+
     def test_trace_summary_endpoint_returns_aggregated_execution_view(self) -> None:
         response = self.client.post(
             "/chat",

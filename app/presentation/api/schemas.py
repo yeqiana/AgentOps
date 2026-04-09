@@ -390,6 +390,19 @@ class TraceResponse(BaseModel):
     trace: TracePayload
 
 
+class TraceStatPayload(BaseModel):
+    method: str
+    path: str
+    status_code: int
+    rate_limited: bool = False
+    trace_count: int
+    last_started_at: str = ""
+
+
+class TraceStatsResponse(BaseModel):
+    stats: list[TraceStatPayload] = Field(default_factory=list)
+
+
 class TraceSummaryPayload(BaseModel):
     trace: TracePayload
     task: TaskPayload | None = None
