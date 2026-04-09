@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from app.domain.errors import AgentError
 from app.application.agent_service import create_initial_state
 from app.domain.models import AgentState, AssetRecord, InputAsset, MessageRecord, RouteDecisionRecord, TaskEventRecord, TaskRecord, ToolResultRecord
+from app.infrastructure.llm.client import sanitize_text
 from app.infrastructure.persistence.repositories import (
     SQLiteAssetRepository,
     SQLiteMessageRepository,
@@ -204,6 +205,39 @@ class SessionService:
             "tool_results": self.tool_result_repository.list_by_task(task_id),
             "route_decisions": self.route_decision_repository.list_by_task(task_id),
         }
+
+    def cancel_task(self, task_id: str, *, updated_by: str, message: str = "任务已取消。") -> dict[str, object] | None:
+        task = self.task_repository.update_status(
+            task_id,
+            status="canceled",
+            error_message=message,
+            updated_by=sanitize_text(updated_by) or "system",
+        )
+        if not task:
+            return None
+        timestamp = _now_iso()
+        self.task_event_repository.create(
+            {
+                "id": f"task_event_{uuid.uuid4().hex}",
+                "task_id": task["id"],
+                "session_id": task["session_id"],
+                "turn_id": task["turn_id"],
+                "trace_id": task["trace_id"],
+                "event_type": "canceled",
+                "event_message": message,
+                "event_payload_json": json.dumps({"status": "canceled"}, ensure_ascii=False, sort_keys=True),
+                "created_by": sanitize_text(updated_by) or "system",
+                "updated_by": sanitize_text(updated_by) or "system",
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                "ext_data1": "",
+                "ext_data2": "",
+                "ext_data3": "",
+                "ext_data4": "",
+                "ext_data5": "",
+            }
+        )
+        return self.get_task(task_id)
 
     def list_task_events(self, task_id: str, *, limit: int = 100, offset: int = 0) -> list[TaskEventRecord]:
         return self.task_event_repository.list_by_task(task_id, limit=limit, offset=offset)

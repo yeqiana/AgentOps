@@ -22,6 +22,7 @@ from __future__ import annotations
 from app.application.services.chat_service import ChatService
 from app.application.services.session_service import SessionService
 from app.domain.errors import AgentError
+from app.domain.errors import ConflictError, ValidationError
 from app.infrastructure.llm.client import sanitize_text
 from app.infrastructure.logger import get_logger
 from app.infrastructure.queue import BackgroundTaskRunner
@@ -57,6 +58,31 @@ class AsyncTaskService:
 
     def get_runtime_snapshot(self) -> dict[str, object]:
         return self.runner.get_runtime_snapshot()
+
+    def cancel_turn(self, task_id: str, *, updated_by: str) -> dict[str, object]:
+        task_bundle = self.session_service.get_task(task_id)
+        if not task_bundle:
+            raise ValidationError("任务不存在。")
+
+        task = task_bundle["task"]
+        if task["status"] != "queued":
+            raise ConflictError("只有处于 queued 状态的任务才允许取消。")
+
+        runtime_state = self.runner.get_task_runtime_state(task_id)
+        if runtime_state == "running":
+            raise ConflictError("任务已经开始执行，当前不支持中断运行中的任务。")
+        if runtime_state == "done":
+            raise ConflictError("任务已结束，不能再取消。")
+        if runtime_state == "missing":
+            raise ConflictError("任务已被后台执行器接管或已结束，当前无法取消。")
+        if not self.runner.cancel(task_id):
+            raise ConflictError("任务取消失败，可能已经开始执行。")
+
+        return self.session_service.cancel_task(
+            task_id,
+            updated_by=updated_by,
+            message="任务在排队阶段被取消。",
+        ) or {}
 
     def _execute_turn(self, state: dict[str, object]) -> None:
         self.session_service.mark_task_running(state)  # type: ignore[arg-type]

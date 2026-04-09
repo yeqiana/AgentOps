@@ -16,6 +16,7 @@ Why this is done this way:
 from __future__ import annotations
 
 import base64
+from concurrent.futures import Future
 import json
 import os
 import tempfile
@@ -667,6 +668,43 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIn("queued", event_types)
         self.assertIn("running", event_types)
         self.assertTrue(any(item in {"completed", "failed"} for item in event_types))
+
+    def test_async_task_can_be_canceled_while_queued(self) -> None:
+        from fastapi.testclient import TestClient
+
+        def fake_submit(self, task_id: str, fn):
+            future: Future[None] = Future()
+            with self.lock:
+                self.futures[task_id] = future
+            future.add_done_callback(lambda _: self._cleanup(task_id))
+            return future
+
+        with patch("app.presentation.api.app.BackgroundTaskRunner.submit", new=fake_submit):
+            client = TestClient(create_app())
+            submit_response = client.post(
+                "/tasks/submit",
+                json={
+                    "message": "帮我写一句简短的自我介绍",
+                    "user_name": "cancel-user",
+                    "session_title": "Cancel Session",
+                },
+            )
+
+            self.assertEqual(submit_response.status_code, 200)
+            payload = submit_response.json()
+            self.assertEqual(payload["status"], "queued")
+
+            cancel_response = client.post(f"/tasks/{payload['task_id']}/cancel")
+            self.assertEqual(cancel_response.status_code, 200)
+            canceled_payload = cancel_response.json()
+            self.assertEqual(canceled_payload["task"]["status"], "canceled")
+            self.assertEqual(canceled_payload["task"]["error_message"], "任务在排队阶段被取消。")
+
+            events_response = client.get(f"/tasks/{payload['task_id']}/events")
+            self.assertEqual(events_response.status_code, 200)
+            event_types = [item["event_type"] for item in events_response.json()["task_events"]]
+            self.assertIn("queued", event_types)
+            self.assertIn("canceled", event_types)
 
     def test_task_not_found_returns_structured_error(self) -> None:
         response = self.client.get("/tasks/task_not_exist")

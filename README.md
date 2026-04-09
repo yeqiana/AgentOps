@@ -16,7 +16,7 @@
 
 当前阶段：
 - 阶段 1：已完成
-- 阶段 2：开发中，当前进度约 `92%`
+- 阶段 2：开发中，当前进度约 `93%`
 - 阶段 3：规划中
 
 ## 当前能力
@@ -27,6 +27,7 @@
 - HTTP SSE 流式对话：`POST /chat/stream`
 - 异步任务提交预留：`POST /tasks/submit`
 - 异步任务运行时快照：`GET /tasks/runtime`
+- 异步任务取消：`POST /tasks/{task_id}/cancel`
 - 任务事件查询：`GET /tasks/{task_id}/events`
 - 多模型接入：OpenAI 兼容协议 + `mock`
 - 多模态输入：文本、图片、音频、视频、文件
@@ -119,6 +120,7 @@ docs/
 - `POST /tasks/submit`
 - `GET /tasks`
 - `GET /tasks/runtime`
+- `POST /tasks/{task_id}/cancel`
 - `GET /tasks/{task_id}`
 - `GET /tasks/{task_id}/events`
 - `GET /tasks/{task_id}/routes`

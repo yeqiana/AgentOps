@@ -832,6 +832,37 @@ class SQLiteTaskRepository:
             ).fetchone()
             return dict(row) if row else None
 
+    def update_status(
+        self,
+        task_id: str,
+        *,
+        status: str,
+        error_message: str,
+        updated_by: str,
+    ) -> TaskRecord | None:
+        with get_connection() as connection:
+            connection.execute(
+                f"""
+                UPDATE {TABLE_BIZ_TASK}
+                SET status = ?, error_message = ?, updated_by = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, error_message, updated_by, _now_iso(), task_id),
+            )
+            row = connection.execute(
+                f"""
+                SELECT id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
+                       route_reason, plan, debate_summary, arbitration_summary, answer,
+                       critic_summary, review_status, review_summary, tool_count, error_message,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_BIZ_TASK}
+                WHERE id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
     def list_by_session(self, session_id: str, limit: int = 20, offset: int = 0) -> list[TaskRecord]:
         with get_connection() as connection:
             rows = connection.execute(

@@ -431,6 +431,15 @@ def create_app():
             ),
         )
 
+    @app.post("/tasks/{task_id}/cancel", response_model=TaskResponse, responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}})
+    def cancel_task(task_id: str, request: Request) -> TaskResponse:
+        require_permission(request, "task.submit")
+        canceled = async_task_service.cancel_turn(
+            sanitize_text(task_id),
+            updated_by=getattr(request.state, "auth_subject", "api-task"),
+        )
+        return TaskResponse(**canceled)
+
     @app.post(
         "/chat/stream",
         responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
