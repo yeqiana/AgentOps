@@ -186,6 +186,50 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIsInstance(payload["deliberation_route"]["keywords"], list)
         self.assertEqual(payload["contextual_route"]["message_threshold"], 5)
 
+    def test_routing_config_template_endpoint_returns_supported_keys(self) -> None:
+        response = self.client.get("/routing/config/template")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["templates"]
+        self.assertGreaterEqual(len(payload), 10)
+        self.assertEqual(payload[0]["config_key"], "image_route_name")
+        template_map = {item["config_key"]: item for item in payload}
+        self.assertEqual(template_map["deliberation_enabled"]["value_type"], "bool")
+        self.assertEqual(template_map["contextual_message_threshold"]["value_type"], "int")
+
+    def test_runtime_config_rejects_unknown_routing_key(self) -> None:
+        response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "routing",
+                "config_key": "unknown_route_key",
+                "config_value": "bad_value",
+                "value_type": "str",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["code"], "validation_error")
+        self.assertIn("不存在", payload["message"])
+
+    def test_runtime_config_rejects_invalid_routing_type(self) -> None:
+        response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "routing",
+                "config_key": "contextual_message_threshold",
+                "config_value": "abc",
+                "value_type": "int",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["code"], "validation_error")
+        self.assertIn("int", payload["message"])
+
     def test_route_stats_endpoint_returns_grouped_route_summary(self) -> None:
         first_response = self.client.post(
             "/chat",
@@ -384,6 +428,38 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(trace_payload["task_id"], payload["task_id"])
         self.assertEqual(trace_payload["session_id"], payload["session_id"])
         self.assertEqual(trace_payload["status_code"], 200)
+
+    def test_trace_summary_endpoint_returns_aggregated_execution_view(self) -> None:
+        response = self.client.post(
+            "/chat",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "trace-summary-user",
+                "session_title": "Trace Summary Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        get_alert_service().create_alert(
+            trace_id=payload["trace_id"],
+            source_type="llm",
+            source_name="mock",
+            severity="warning",
+            event_code="summary_test_alert",
+            message="trace summary integration test",
+            payload={"task_id": payload["task_id"]},
+        )
+
+        summary_response = self.client.get(f"/traces/{payload['trace_id']}/summary")
+        self.assertEqual(summary_response.status_code, 200)
+        summary = summary_response.json()["summary"]
+        self.assertEqual(summary["trace"]["trace_id"], payload["trace_id"])
+        self.assertEqual(summary["task"]["id"], payload["task_id"])
+        self.assertGreaterEqual(len(summary["route_decisions"]), 1)
+        self.assertGreaterEqual(len(summary["task_events"]), 1)
+        self.assertEqual(summary["task_events"][-1]["event_type"], "completed")
+        self.assertEqual(summary["alerts"][0]["event_code"], "summary_test_alert")
 
     def test_alert_endpoints_can_query_persisted_alerts(self) -> None:
         alert = get_alert_service().create_alert(

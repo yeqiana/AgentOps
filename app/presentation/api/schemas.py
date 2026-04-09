@@ -237,6 +237,17 @@ class RoutingConfigResponse(BaseModel):
     routing: RoutingConfigPayload
 
 
+class RoutingConfigTemplateItemPayload(BaseModel):
+    config_key: str
+    value_type: str
+    description: str
+    example_value: str
+
+
+class RoutingConfigTemplateResponse(BaseModel):
+    templates: list[RoutingConfigTemplateItemPayload] = Field(default_factory=list)
+
+
 class TaskResponse(BaseModel):
     task: TaskPayload
     task_events: list[TaskEventPayload] = Field(default_factory=list)
@@ -326,6 +337,19 @@ class TracePayload(BaseModel):
 
 class TraceResponse(BaseModel):
     trace: TracePayload
+
+
+class TraceSummaryPayload(BaseModel):
+    trace: TracePayload
+    task: TaskPayload | None = None
+    task_events: list[TaskEventPayload] = Field(default_factory=list)
+    tool_results: list[ToolResultPayload] = Field(default_factory=list)
+    route_decisions: list[RouteDecisionPayload] = Field(default_factory=list)
+    alerts: list[AlertEventPayload] = Field(default_factory=list)
+
+
+class TraceSummaryResponse(BaseModel):
+    summary: TraceSummaryPayload
 
 
 class AlertEventPayload(BaseModel):

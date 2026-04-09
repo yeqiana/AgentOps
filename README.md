@@ -8,6 +8,7 @@
 - 多模态输入与工具增强
 - 统一鉴权、限流、幂等、RBAC
 - trace、告警、恢复治理
+- trace 聚合摘要查询
 - 请求路由中台最小版
 - 多 Agent 最小编排
 - 运行时配置中心
@@ -15,7 +16,7 @@
 
 当前阶段：
 - 阶段 1：已完成
-- 阶段 2：开发中，当前进度约 `90%`
+- 阶段 2：开发中，当前进度约 `92%`
 - 阶段 3：规划中
 
 ## 当前能力
@@ -58,6 +59,7 @@
 - 限流与幂等
 - trace 查询
 - 告警记录、查询与 trace 关联查询
+- trace 聚合摘要查询
 - 模型与工具的重试、熔断、降级
 - 数据库驱动运行时配置中心
 - 数据库驱动角色注册
@@ -139,6 +141,7 @@ docs/
 - `GET /security/config`
 - `GET /recovery/config`
 - `GET /traces/{trace_id}`
+- `GET /traces/{trace_id}/summary`
 - `GET /traces/{trace_id}/alerts`
 - `GET /alerts`
 - `GET /alerts/{alert_id}`
