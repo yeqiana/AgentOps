@@ -71,6 +71,7 @@ from app.presentation.api.schemas import (
     RecoveryConfigPayload,
     RecoveryConfigResponse,
     RouteDecisionListResponse,
+    RouteDecisionPayload,
     RouteDecisionStatPayload,
     RouteDecisionStatsResponse,
     RuntimeConfigItemPayload,
@@ -79,6 +80,8 @@ from app.presentation.api.schemas import (
     RuntimeConfigUpsertResponse,
     RoutingConfigPayload,
     RoutingConfigResponse,
+    RoutingConfigTemplateItemPayload,
+    RoutingConfigTemplateResponse,
     RoutingDecisionRulePayload,
     RoutingRulePayload,
     SessionListResponse,
@@ -88,12 +91,15 @@ from app.presentation.api.schemas import (
     TaskListResponse,
     TaskEventListResponse,
     TaskEventPayload,
+    TaskPayload,
     TaskResponse,
     ToolExecuteRequest,
     ToolExecuteResponse,
     ToolInfoPayload,
     ToolListResponse,
     TracePayload,
+    TraceSummaryPayload,
+    TraceSummaryResponse,
     TraceResponse,
     UploadAssetResponse,
     WorkflowConfigPayload,
@@ -730,6 +736,22 @@ def create_app():
             )
         )
 
+    @app.get("/routing/config/template", response_model=RoutingConfigTemplateResponse)
+    def get_routing_config_template(request: Request) -> RoutingConfigTemplateResponse:
+        require_permission(request, "config.read")
+        definitions = config_service.get_routing_config_template()
+        return RoutingConfigTemplateResponse(
+            templates=[
+                RoutingConfigTemplateItemPayload(
+                    config_key=key,
+                    value_type=item["value_type"],
+                    description=item["description"],
+                    example_value=item["example_value"],
+                )
+                for key, item in definitions.items()
+            ]
+        )
+
     @app.get("/config/runtime", response_model=RuntimeConfigListResponse)
     def list_runtime_configs(request: Request, scope: str | None = None) -> RuntimeConfigListResponse:
         require_permission(request, "config.read")
@@ -759,6 +781,12 @@ def create_app():
         require_permission(request, "config.write")
         if not payload.config_scope or not payload.config_key:
             raise ValidationError("config_scope 和 config_key 不能为空。")
+        config_service.validate_config_entry(
+            scope=sanitize_text(payload.config_scope),
+            key=sanitize_text(payload.config_key),
+            value=sanitize_text(payload.config_value),
+            value_type=sanitize_text(payload.value_type),
+        )
         item = config_service.upsert_config(
             scope=sanitize_text(payload.config_scope),
             key=sanitize_text(payload.config_key),
@@ -916,6 +944,86 @@ def create_app():
         if not trace:
             raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
         return TraceResponse(trace=TracePayload(**trace))
+
+    @app.get("/traces/{trace_id}/summary", response_model=TraceSummaryResponse, responses={404: {"model": ErrorResponse}})
+    def get_trace_summary(trace_id: str, request: Request) -> TraceSummaryResponse:
+        require_permission(request, "trace.read")
+        normalized_trace_id = sanitize_text(trace_id)
+        trace = trace_service.get_trace(normalized_trace_id)
+        if not trace:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+
+        task_bundle = session_service.get_task(trace["task_id"]) if trace["task_id"] else None
+        route_decisions = task_bundle["route_decisions"] if task_bundle else session_service.list_route_decisions(trace_id=normalized_trace_id, limit=100, offset=0)
+        task_events = task_bundle["task_events"] if task_bundle else []
+        tool_results = task_bundle["tool_results"] if task_bundle else []
+        alerts = alert_service.list_alerts(trace_id=normalized_trace_id, limit=100, offset=0)
+
+        return TraceSummaryResponse(
+            summary=TraceSummaryPayload(
+                trace=TracePayload(**trace),
+                task=TaskPayload(**task_bundle["task"]) if task_bundle else None,
+                task_events=[
+                    TaskEventPayload(
+                        id=item["id"],
+                        task_id=item["task_id"],
+                        session_id=item["session_id"],
+                        turn_id=item["turn_id"],
+                        trace_id=item["trace_id"],
+                        event_type=item["event_type"],
+                        event_message=item["event_message"],
+                        event_payload_json=item["event_payload_json"],
+                        created_at=item["created_at"],
+                    )
+                    for item in task_events
+                ],
+                tool_results=[
+                    ToolResultPayload(
+                        id=item["id"],
+                        task_id=item["task_id"],
+                        session_id=item["session_id"],
+                        turn_id=item["turn_id"],
+                        trace_id=item["trace_id"],
+                        tool_name=item["tool_name"],
+                        success=item["success"],
+                        exit_code=item["exit_code"],
+                        stdout=item["stdout"],
+                        stderr=item["stderr"],
+                        created_at=item["created_at"],
+                    )
+                    for item in tool_results
+                ],
+                route_decisions=[
+                    RouteDecisionPayload(
+                        id=item["id"],
+                        task_id=item["task_id"],
+                        session_id=item["session_id"],
+                        turn_id=item["turn_id"],
+                        trace_id=item["trace_id"],
+                        route_name=item["route_name"],
+                        route_reason=item["route_reason"],
+                        route_source=item["route_source"],
+                        created_at=item["created_at"],
+                    )
+                    for item in route_decisions
+                ],
+                alerts=[
+                    AlertEventPayload(
+                        id=item["id"],
+                        trace_id=item["trace_id"],
+                        source_type=item["source_type"],
+                        source_name=item["source_name"],
+                        severity=item["severity"],
+                        event_code=item["event_code"],
+                        message=item["message"],
+                        payload_json=item["payload_json"],
+                        created_at=item["created_at"],
+                        updated_at=item["updated_at"],
+                    )
+                    for item in alerts
+                ],
+            )
+        )
 
     @app.get("/alerts", response_model=AlertEventListResponse)
     def list_alerts(

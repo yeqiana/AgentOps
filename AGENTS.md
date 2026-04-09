@@ -4,7 +4,6 @@
 
 - 这是一个基于 Python、LangGraph 和 OpenAI 兼容协议的 Agent 底座项目
 - 阶段 1 已完成，阶段 2 正在开发
-- 当前重点是治理底座、多 Agent 编排、运行时配置中心、数据库规范、可排障能力、请求路由中台和异步任务预留
 - 当前重点是治理底座、多 Agent 编排、运行时配置中心、数据库规范、可排障能力、请求路由中台和异步任务深化
 - 当前已支持 CLI 与 API 的流式对话输出
 
@@ -64,6 +63,7 @@
   - 限流与幂等
   - trace service
   - 恢复告警记录、查询与 trace 关联查询
+  - trace 聚合摘要查询：`/traces/{trace_id}/summary`
   - 基础重试与熔断降级
   - 配置化恢复策略
   - `router / debate / arbitration / critic / review` 最小多角色编排
