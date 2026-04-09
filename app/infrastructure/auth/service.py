@@ -110,6 +110,12 @@ class AuthService:
     def list_permissions(self) -> list[dict[str, object]]:
         return self.permission_repository.list_permissions()
 
+    def get_subject_assignments(self, *, auth_subject: str) -> list[dict[str, object]]:
+        normalized_subject = sanitize_text(auth_subject)
+        if not normalized_subject:
+            raise ValidationError("auth_subject 不能为空。")
+        return self.subject_role_repository.list_by_subject(normalized_subject)
+
     def assign_subject_roles(self, *, auth_subject: str, role_keys: list[str], updated_by: str) -> list[dict[str, object]]:
         normalized_subject = sanitize_text(auth_subject)
         if not normalized_subject:
