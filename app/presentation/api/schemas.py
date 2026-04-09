@@ -341,3 +341,50 @@ class RuntimeConfigUpsertRequest(BaseModel):
 
 class RuntimeConfigUpsertResponse(BaseModel):
     config: RuntimeConfigItemPayload
+
+
+class AuthRolePayload(BaseModel):
+    role_key: str
+    role_name: str
+    description: str
+    is_enabled: bool
+
+
+class AuthPermissionPayload(BaseModel):
+    permission_key: str
+    permission_name: str
+    description: str
+
+
+class AuthSubjectRolePayload(BaseModel):
+    auth_subject: str
+    role_key: str
+    created_at: str
+    updated_at: str
+
+
+class AuthProfilePayload(BaseModel):
+    auth_subject: str
+    auth_type: str
+    roles: list[str]
+    permissions: list[str]
+
+
+class AuthMeResponse(BaseModel):
+    profile: AuthProfilePayload
+
+
+class AuthRoleListResponse(BaseModel):
+    roles: list[AuthRolePayload]
+    permissions: list[AuthPermissionPayload]
+
+
+class AuthSubjectRoleAssignRequest(BaseModel):
+    role_keys: list[str] = Field(default_factory=list, description="需要授予给主体的角色键列表。")
+    updated_by: str = Field(default="api-auth", description="本次授权操作人。")
+
+
+class AuthSubjectRoleAssignResponse(BaseModel):
+    auth_subject: str
+    role_keys: list[str]
+    assignments: list[AuthSubjectRolePayload]

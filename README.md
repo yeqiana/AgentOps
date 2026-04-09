@@ -1,10 +1,22 @@
 # AgentOps
 
+## 项目简介
+
+`AgentOps` 是一个面向企业内部场景的 Agent 后端底座，聚焦多模态输入、工具调用、执行留痕与失败排障，帮助团队把 Agent 从“能聊天”推进到“能稳定执行任务”。
+
+它不是单点聊天脚本，也不是大而全的平台，而是一个代码优先、后端优先、可持续演进的 Agent Runtime 基座。项目当前先把“模型 + 工具 + 任务输入 + 可追踪执行”这条主链跑通，再为请求路由中台、异步任务体系、权限控制和多 Agent 编排预留清晰的演进空间。
+
+当前项目适合：
+- 构建企业内部的多模态分析型 Agent 后端
+- 接入 OCR、ASR、视频处理等本地工具能力
+- 搭建具备任务追踪、工具结果落库和统一异常处理的执行底座
+- 在稳定 MVP 基础上逐步扩展请求路由、权限治理和多 Agent 协同
+
 这是一个基于 Python、LangGraph 和 OpenAI 兼容协议的 Agent 底座项目。
 
 当前状态：
 - 阶段 1 已完成
-- 阶段 2 开发中，当前进度约 `75% - 80%`
+- 阶段 2 开发中，当前进度约 `85%`
 - 已支持 CLI、HTTP API、多模态输入、工具调用、任务追踪、运行时配置中心和最小多 Agent 编排
 - 已支持 CLI 和 HTTP API 的流式对话输出
 - 阶段 2 已补齐正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
@@ -21,6 +33,7 @@
 - OCR / ASR / 视频探测 / 抽帧 / 抽音轨
 - 工具注册与 Agent 自动调用工具
 - 统一鉴权
+- 最小 RBAC 授权
 - 限流与幂等
 - trace 查询
 - 恢复告警查询
@@ -77,6 +90,9 @@ docs/
 ## 关键接口
 
 - `GET /health`
+- `GET /auth/me`
+- `GET /auth/roles`
+- `PUT /auth/subjects/{auth_subject}/roles`
 - `POST /chat`
 - `POST /chat/stream`
 - `GET /sessions`
@@ -111,6 +127,10 @@ docs/
 - `sys_runtime_config`
 - `sys_workflow_role`
 - `sys_alert_event`
+- `sys_auth_role`
+- `sys_auth_permission`
+- `sys_auth_role_permission`
+- `sys_auth_subject_role`
 - `biz_session`
 - `biz_message`
 - `biz_asset`

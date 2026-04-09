@@ -407,6 +407,123 @@ class AlertEventRecord(TypedDict):
     ext_data5: str
 
 
+class AuthRoleRecord(TypedDict):
+    """
+    RBAC 角色持久化记录。
+
+    这是什么：
+    - 数据库中的授权角色定义行结构。
+
+    做什么：
+    - 保存角色键、角色名称、描述和启停状态。
+
+    为什么这么做：
+    - 阶段 2 需要把“认证”推进到“最小授权”，角色必须成为可查询、
+      可分配、可扩展的独立对象。
+    """
+
+    id: str
+    role_key: str
+    role_name: str
+    description: str
+    is_enabled: bool
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
+class AuthPermissionRecord(TypedDict):
+    """
+    RBAC 权限持久化记录。
+
+    这是什么：
+    - 数据库中的权限定义行结构。
+
+    做什么：
+    - 保存权限键、权限名称和权限说明。
+
+    为什么这么做：
+    - 只有把权限定义固化下来，角色授权和接口鉴权才能围绕统一权限语言协作。
+    """
+
+    id: str
+    permission_key: str
+    permission_name: str
+    description: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
+class AuthRolePermissionRecord(TypedDict):
+    """
+    角色权限关系持久化记录。
+
+    这是什么：
+    - 数据库中的角色到权限关系行结构。
+
+    做什么：
+    - 保存某个角色包含哪些权限。
+
+    为什么这么做：
+    - 最小 RBAC 需要将角色和权限解耦，后续才方便扩展权限组合。
+    """
+
+    id: str
+    role_key: str
+    permission_key: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
+class AuthSubjectRoleRecord(TypedDict):
+    """
+    主体角色关系持久化记录。
+
+    这是什么：
+    - 数据库中的主体到角色关系行结构。
+
+    做什么：
+    - 保存某个认证主体被授予的角色集合。
+
+    为什么这么做：
+    - 当前认证主体可能是 API Key、Bearer Token 或后续用户实体，
+      主体与角色分离后更适合后续演进。
+    """
+
+    id: str
+    auth_subject: str
+    role_key: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
 class AgentState(TypedDict):
     """
     Agent 共享状态。
