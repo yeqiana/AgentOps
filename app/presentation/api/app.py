@@ -87,6 +87,8 @@ from app.presentation.api.schemas import (
     RuntimeConfigUpsertResponse,
     RoutingConfigPayload,
     RoutingConfigResponse,
+    RoutingPreviewRequest,
+    RoutingPreviewResponse,
     RoutingConfigTemplateItemPayload,
     RoutingConfigTemplateResponse,
     RoutingDecisionRulePayload,
@@ -880,6 +882,27 @@ def create_app():
                 )
                 for key, item in definitions.items()
             ]
+        )
+
+    @app.post("/routing/preview", response_model=RoutingPreviewResponse, responses={400: {"model": ErrorResponse}})
+    def preview_routing(payload: RoutingPreviewRequest, request: Request) -> RoutingPreviewResponse:
+        require_permission(request, "task.read")
+        raw_input = sanitize_text(payload.input)
+        if not raw_input:
+            raise ValidationError("input 不能为空。")
+        normalized_user_input, input_assets = parse_input_assets(raw_input)
+        route_decision = request_route_service.decide(
+            user_input=normalized_user_input,
+            input_assets=input_assets,
+            message_count=max(0, payload.message_count),
+            route_source=sanitize_text(payload.route_source) or "preview",
+        )
+        return RoutingPreviewResponse(
+            user_input=normalized_user_input,
+            route_name=route_decision["route_name"],
+            route_reason=route_decision["route_reason"],
+            route_source=route_decision["route_source"],
+            input_assets=input_assets,
         )
 
     @app.get("/config/runtime", response_model=RuntimeConfigListResponse)

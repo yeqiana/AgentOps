@@ -58,6 +58,7 @@
 - 阶段 2 已落地：
   - 请求路由中台最小版：`request_route_service`
   - 路由决策持久化、查询与统计
+  - 路由策略预览：`/routing/preview`
   - 路由配置模板与校验：`/routing/config/template` + `routing` scope key/type validation
   - 统一鉴权
   - 最小 RBAC

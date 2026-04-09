@@ -259,6 +259,20 @@ class RoutingConfigTemplateResponse(BaseModel):
     templates: list[RoutingConfigTemplateItemPayload] = Field(default_factory=list)
 
 
+class RoutingPreviewRequest(BaseModel):
+    input: str = Field(min_length=1, description="用于预览路由的原始输入命令。")
+    message_count: int = Field(default=1, ge=0, description="用于模拟上下文深度的消息数量。")
+    route_source: str = Field(default="preview", description="本次路由预览的来源标记。")
+
+
+class RoutingPreviewResponse(BaseModel):
+    user_input: str
+    route_name: str
+    route_reason: str
+    route_source: str
+    input_assets: list[dict[str, object]] = Field(default_factory=list)
+
+
 class TaskResponse(BaseModel):
     task: TaskPayload
     task_events: list[TaskEventPayload] = Field(default_factory=list)
