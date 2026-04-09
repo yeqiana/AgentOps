@@ -98,6 +98,8 @@ def create_initial_state(user_id: str = "local-user") -> AgentState:
         "task_id": "",
         "trace_id": "",
         "user_input": "",
+        "execution_mode": "",
+        "protocol_summary": "",
         "route_name": "",
         "route_reason": "",
         "plan": "",

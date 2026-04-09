@@ -26,28 +26,38 @@ from app.domain.models import RuntimeContext
 
 DEFAULT_UPLOAD_DOWNLOAD_DIR = "/app/download"
 UPLOAD_DOWNLOAD_DIR_ENV = "APP_DOWNLOAD_DIR"
+
 AUTH_ENABLED_ENV = "APP_AUTH_ENABLED"
 API_KEYS_ENV = "APP_API_KEYS"
 BEARER_TOKENS_ENV = "APP_BEARER_TOKENS"
+
 RATE_LIMIT_ENABLED_ENV = "APP_RATE_LIMIT_ENABLED"
 RATE_LIMIT_REQUESTS_ENV = "APP_RATE_LIMIT_REQUESTS"
 RATE_LIMIT_WINDOW_SECONDS_ENV = "APP_RATE_LIMIT_WINDOW_SECONDS"
+
 IDEMPOTENCY_ENABLED_ENV = "APP_IDEMPOTENCY_ENABLED"
 IDEMPOTENCY_TTL_SECONDS_ENV = "APP_IDEMPOTENCY_TTL_SECONDS"
+
 LLM_RETRY_ENABLED_ENV = "APP_LLM_RETRY_ENABLED"
 LLM_RETRY_ATTEMPTS_ENV = "APP_LLM_RETRY_ATTEMPTS"
 LLM_RETRY_BACKOFF_MS_ENV = "APP_LLM_RETRY_BACKOFF_MS"
+
 TOOL_RETRY_ENABLED_ENV = "APP_TOOL_RETRY_ENABLED"
 TOOL_RETRY_ATTEMPTS_ENV = "APP_TOOL_RETRY_ATTEMPTS"
 TOOL_RETRY_BACKOFF_MS_ENV = "APP_TOOL_RETRY_BACKOFF_MS"
+
 LLM_CIRCUIT_ENABLED_ENV = "APP_LLM_CIRCUIT_ENABLED"
 LLM_CIRCUIT_FAILURE_THRESHOLD_ENV = "APP_LLM_CIRCUIT_FAILURE_THRESHOLD"
 LLM_CIRCUIT_RECOVERY_SECONDS_ENV = "APP_LLM_CIRCUIT_RECOVERY_SECONDS"
+
 TOOL_CIRCUIT_ENABLED_ENV = "APP_TOOL_CIRCUIT_ENABLED"
 TOOL_CIRCUIT_FAILURE_THRESHOLD_ENV = "APP_TOOL_CIRCUIT_FAILURE_THRESHOLD"
 TOOL_CIRCUIT_RECOVERY_SECONDS_ENV = "APP_TOOL_CIRCUIT_RECOVERY_SECONDS"
+
 WORKFLOW_DELIBERATION_ENABLED_ENV = "APP_WORKFLOW_DELIBERATION_ENABLED"
 WORKFLOW_DELIBERATION_KEYWORDS_ENV = "APP_WORKFLOW_DELIBERATION_KEYWORDS"
+WORKFLOW_EXECUTION_MODE_ENV = "APP_WORKFLOW_EXECUTION_MODE"
+
 WORKFLOW_SUPPORT_ROLE_NAME_ENV = "APP_WORKFLOW_SUPPORT_ROLE_NAME"
 WORKFLOW_SUPPORT_ROLE_INSTRUCTION_ENV = "APP_WORKFLOW_SUPPORT_ROLE_INSTRUCTION"
 WORKFLOW_CHALLENGE_ROLE_NAME_ENV = "APP_WORKFLOW_CHALLENGE_ROLE_NAME"
@@ -62,9 +72,11 @@ WORKFLOW_CRITIC_ROLE_NAME_ENV = "APP_WORKFLOW_CRITIC_ROLE_NAME"
 WORKFLOW_CRITIC_ROLE_INSTRUCTION_ENV = "APP_WORKFLOW_CRITIC_ROLE_INSTRUCTION"
 WORKFLOW_REVIEWER_ROLE_NAME_ENV = "APP_WORKFLOW_REVIEWER_ROLE_NAME"
 WORKFLOW_REVIEWER_ROLE_INSTRUCTION_ENV = "APP_WORKFLOW_REVIEWER_ROLE_INSTRUCTION"
+
 ALLOWED_TOOLS_ENV = "APP_ALLOWED_TOOLS"
 UPLOAD_MAX_BYTES_ENV = "APP_UPLOAD_MAX_BYTES"
 UPLOAD_ALLOWED_KINDS_ENV = "APP_UPLOAD_ALLOWED_KINDS"
+
 RECOVERY_LLM_DEGRADE_TO_MOCK_ENV = "APP_RECOVERY_LLM_DEGRADE_TO_MOCK"
 RECOVERY_TOOL_SOFT_FAIL_ENV = "APP_RECOVERY_TOOL_SOFT_FAIL"
 
@@ -73,6 +85,7 @@ DEFAULT_TASK_STATE = "当前无长期任务状态。"
 DEFAULT_OUTPUT_FORMAT = "markdown"
 DEFAULT_TONE_STYLE = "专业、简洁、直接"
 DEFAULT_VERBOSITY_LEVEL = "中等"
+
 DEFAULT_RATE_LIMIT_REQUESTS = 60
 DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60
 DEFAULT_IDEMPOTENCY_TTL_SECONDS = 300
@@ -80,21 +93,25 @@ DEFAULT_RETRY_ATTEMPTS = 2
 DEFAULT_RETRY_BACKOFF_MS = 100
 DEFAULT_CIRCUIT_FAILURE_THRESHOLD = 3
 DEFAULT_CIRCUIT_RECOVERY_SECONDS = 30
+
+DEFAULT_WORKFLOW_EXECUTION_MODE = "delegated"
 DEFAULT_DELIBERATION_KEYWORDS = ["比较", "辩论", "评审", "优缺点", "方案"]
+
 DEFAULT_SUPPORT_ROLE_NAME = "支持方代理"
 DEFAULT_SUPPORT_ROLE_INSTRUCTION = "优先指出当前规划与最终回答应保留的强项和有效路径。"
 DEFAULT_CHALLENGE_ROLE_NAME = "质疑方代理"
 DEFAULT_CHALLENGE_ROLE_INSTRUCTION = "优先指出当前规划可能遗漏的风险、限制、反例或需要澄清的地方。"
-DEFAULT_ARBITRATION_ROLE_NAME = "仲裁代理"
-DEFAULT_ARBITRATION_ROLE_INSTRUCTION = "优先整理支持与质疑两方的观点，并给出最终可执行的取舍与输出要点。"
-DEFAULT_CRITIC_ROLE_NAME = "批评代理"
-DEFAULT_CRITIC_ROLE_INSTRUCTION = "优先指出答案的遗漏、风险和说明不足，并给出最关键的修改建议。"
 DEFAULT_PLANNER_ROLE_NAME = "规划代理"
 DEFAULT_PLANNER_ROLE_INSTRUCTION = "优先梳理用户目标、上下文约束、工具结果与执行路径，生成可执行计划。"
 DEFAULT_EXECUTOR_ROLE_NAME = "执行代理"
 DEFAULT_EXECUTOR_ROLE_INSTRUCTION = "优先依据规划、工具结果和仲裁结论生成最终可执行回答。"
+DEFAULT_ARBITRATION_ROLE_NAME = "仲裁代理"
+DEFAULT_ARBITRATION_ROLE_INSTRUCTION = "优先整理支持与质疑两方的观点，并给出最终可执行的取舍与输出要点。"
+DEFAULT_CRITIC_ROLE_NAME = "批评代理"
+DEFAULT_CRITIC_ROLE_INSTRUCTION = "优先指出答案的遗漏、风险和说明不足，并给出最关键的修改建议。"
 DEFAULT_REVIEWER_ROLE_NAME = "复核代理"
 DEFAULT_REVIEWER_ROLE_INSTRUCTION = "优先根据答案、工具结果和批评摘要给出复核结论与发布建议。"
+
 DEFAULT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024
 DEFAULT_UPLOAD_ALLOWED_KINDS = ["image", "audio", "video", "file"]
 DEFAULT_ALLOWED_TOOLS: list[str] = []
@@ -159,19 +176,6 @@ def create_default_runtime_context() -> RuntimeContext:
 
 
 def get_upload_download_dir() -> Path:
-    """
-    What this is:
-    - A helper that resolves the upload/download root directory.
-
-    What it does:
-    - Reads the configured directory from environment variables.
-    - Falls back to `/app/download` when no override is provided.
-
-    Why this is done this way:
-    - The project needs a stable default path for uploads, but different
-      deployments still need to redirect storage to a writable location.
-    """
-
     configured_value = os.getenv(UPLOAD_DOWNLOAD_DIR_ENV, DEFAULT_UPLOAD_DOWNLOAD_DIR).strip()
     if not configured_value:
         configured_value = DEFAULT_UPLOAD_DOWNLOAD_DIR
@@ -179,18 +183,6 @@ def get_upload_download_dir() -> Path:
 
 
 def ensure_upload_download_dir() -> Path:
-    """
-    What this is:
-    - A directory initialization helper for upload storage.
-
-    What it does:
-    - Resolves the configured upload directory and creates it if needed.
-
-    Why this is done this way:
-    - Upload endpoints and OCR-style local tools both depend on a concrete local
-      file path, so the directory must exist before files are persisted.
-    """
-
     upload_dir = get_upload_download_dir()
     upload_dir.mkdir(parents=True, exist_ok=True)
     return upload_dir
@@ -284,6 +276,13 @@ def get_workflow_deliberation_keywords() -> list[str]:
     return _get_csv_env(WORKFLOW_DELIBERATION_KEYWORDS_ENV, DEFAULT_DELIBERATION_KEYWORDS)
 
 
+def get_workflow_execution_mode() -> str:
+    value = os.getenv(WORKFLOW_EXECUTION_MODE_ENV, DEFAULT_WORKFLOW_EXECUTION_MODE).strip().lower()
+    if value not in {"delegated", "standard"}:
+        return DEFAULT_WORKFLOW_EXECUTION_MODE
+    return value
+
+
 def get_workflow_support_role_name() -> str:
     return os.getenv(WORKFLOW_SUPPORT_ROLE_NAME_ENV, DEFAULT_SUPPORT_ROLE_NAME).strip() or DEFAULT_SUPPORT_ROLE_NAME
 
@@ -346,10 +345,7 @@ def get_workflow_arbitration_role_instruction() -> str:
 
 
 def get_workflow_critic_role_name() -> str:
-    return (
-        os.getenv(WORKFLOW_CRITIC_ROLE_NAME_ENV, DEFAULT_CRITIC_ROLE_NAME).strip()
-        or DEFAULT_CRITIC_ROLE_NAME
-    )
+    return os.getenv(WORKFLOW_CRITIC_ROLE_NAME_ENV, DEFAULT_CRITIC_ROLE_NAME).strip() or DEFAULT_CRITIC_ROLE_NAME
 
 
 def get_workflow_critic_role_instruction() -> str:

@@ -220,6 +220,8 @@ class TaskRecord(TypedDict):
     trace_id: str
     status: str
     user_input: str
+    execution_mode: str
+    protocol_summary: str
     route_name: str
     route_reason: str
     plan: str
@@ -422,6 +424,8 @@ class AgentState(TypedDict):
     task_id: str
     trace_id: str
     user_input: str
+    execution_mode: str
+    protocol_summary: str
     route_name: str
     route_reason: str
     plan: str

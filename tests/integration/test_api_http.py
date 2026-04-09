@@ -103,6 +103,7 @@ class ApiHttpTests(unittest.TestCase):
         response = self.client.get("/workflow/config")
         self.assertEqual(response.status_code, 200)
         payload = response.json()["workflow"]
+        self.assertIn("execution_mode", payload)
         self.assertIn("deliberation_enabled", payload)
         self.assertIn("deliberation_keywords", payload)
         self.assertIn("support_role", payload)
@@ -113,6 +114,25 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIn("critic_role", payload)
         self.assertIn("reviewer_role", payload)
         self.assertTrue(payload["support_role"]["name"])
+
+    def test_runtime_config_endpoints_affect_workflow_execution_mode(self) -> None:
+        put_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "workflow",
+                "config_key": "execution_mode",
+                "config_value": "standard",
+                "value_type": "str",
+                "description": "integration test",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(put_response.status_code, 200)
+
+        workflow_response = self.client.get("/workflow/config")
+        self.assertEqual(workflow_response.status_code, 200)
+        workflow_payload = workflow_response.json()["workflow"]
+        self.assertEqual(workflow_payload["execution_mode"], "standard")
 
     def test_workflow_role_endpoints_can_query_and_update_role(self) -> None:
         list_response = self.client.get("/workflow/roles")
@@ -344,6 +364,8 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIn("session_id", payload)
         self.assertIn("task_id", payload)
         self.assertIn("trace_id", payload)
+        self.assertIn("execution_mode", payload)
+        self.assertIn("protocol_summary", payload)
         self.assertIn("route_name", payload)
         self.assertIn("debate_summary", payload)
         self.assertIn("arbitration_summary", payload)
@@ -380,6 +402,8 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(task_payload["task"]["id"], payload["task_id"])
         self.assertEqual(task_payload["task"]["session_id"], payload["session_id"])
         self.assertEqual(task_payload["task"]["status"], "completed")
+        self.assertEqual(task_payload["task"]["execution_mode"], payload["execution_mode"])
+        self.assertEqual(task_payload["task"]["protocol_summary"], payload["protocol_summary"])
         self.assertEqual(task_payload["task"]["route_name"], payload["route_name"])
         self.assertEqual(task_payload["task"]["debate_summary"], payload["debate_summary"])
         self.assertEqual(task_payload["task"]["arbitration_summary"], payload["arbitration_summary"])

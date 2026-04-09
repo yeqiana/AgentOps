@@ -34,6 +34,8 @@ class ChatResponse(BaseModel):
     turn_id: str
     task_id: str
     trace_id: str
+    execution_mode: str
+    protocol_summary: str
     route_name: str
     route_reason: str
     plan: str
@@ -106,6 +108,8 @@ class TaskPayload(BaseModel):
     trace_id: str
     status: str
     user_input: str
+    execution_mode: str
+    protocol_summary: str
     route_name: str
     route_reason: str
     plan: str
@@ -252,6 +256,7 @@ class WorkflowRolePayload(BaseModel):
 
 
 class WorkflowConfigPayload(BaseModel):
+    execution_mode: str
     deliberation_enabled: bool
     deliberation_keywords: list[str]
     support_role: WorkflowRolePayload

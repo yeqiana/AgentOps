@@ -58,6 +58,7 @@
   - 数据库驱动运行时配置中心
   - 数据库驱动角色注册
   - 正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
+  - 可切换执行协议：`delegated / standard`
 - 阶段 2 后续继续建设：
   - 失败恢复增强
   - 策略中心深化

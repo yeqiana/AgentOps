@@ -52,6 +52,22 @@ class RuntimeConfigServiceTests(unittest.TestCase):
 
         self.assertEqual(effective["support_role_name"], "数据库支持代理")
 
+    def test_workflow_execution_mode_db_override_beats_environment_default(self) -> None:
+        service = RuntimeConfigService()
+        service.upsert_config(
+            scope="workflow",
+            key="execution_mode",
+            value="standard",
+            value_type="str",
+            description="test execution mode override",
+            updated_by="tester",
+        )
+
+        with patch.dict(os.environ, {"APP_WORKFLOW_EXECUTION_MODE": "delegated"}, clear=False):
+            effective = service.get_effective_workflow_config()
+
+        self.assertEqual(effective["execution_mode"], "standard")
+
     def test_workflow_role_overrides_only_return_database_values(self) -> None:
         service = RuntimeConfigService()
 
