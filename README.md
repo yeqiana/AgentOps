@@ -36,6 +36,7 @@
 - 本地工具链：OCR、ASR、视频探测、抽帧、抽音轨
 - 请求路由中台最小版
 - 路由决策持久化、查询与统计
+- 路由配置模板与校验：`GET /routing/config/template`，并对 `routing` 配置写入执行 key/type 校验
 - 异步任务事件持久化与回查
 - 最小多 Agent 编排：
   - `router`
