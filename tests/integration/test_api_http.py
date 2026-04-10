@@ -576,6 +576,41 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(summary["task_events"][-1]["event_type"], "completed")
         self.assertEqual(summary["alerts"][0]["event_code"], "summary_test_alert")
 
+    def test_trace_timeline_endpoint_returns_chronological_events(self) -> None:
+        response = self.client.post(
+            "/chat",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "trace-timeline-user",
+                "session_title": "Trace Timeline Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        get_alert_service().create_alert(
+            trace_id=payload["trace_id"],
+            source_type="llm",
+            source_name="mock",
+            severity="warning",
+            event_code="timeline_test_alert",
+            message="trace timeline integration test",
+            payload={"task_id": payload["task_id"]},
+        )
+
+        timeline_response = self.client.get(f"/traces/{payload['trace_id']}/timeline")
+        self.assertEqual(timeline_response.status_code, 200)
+        timeline = timeline_response.json()
+        self.assertEqual(timeline["trace"]["trace_id"], payload["trace_id"])
+        self.assertGreaterEqual(len(timeline["events"]), 4)
+        event_types = [item["event_type"] for item in timeline["events"]]
+        self.assertIn("request_started", event_types)
+        self.assertIn("route_decision", event_types)
+        self.assertIn("completed", event_types)
+        self.assertIn("alert", event_types)
+        happened_at_values = [item["happened_at"] for item in timeline["events"]]
+        self.assertEqual(happened_at_values, sorted(happened_at_values))
+
     def test_task_summary_endpoint_returns_aggregated_execution_view(self) -> None:
         response = self.client.post(
             "/chat",

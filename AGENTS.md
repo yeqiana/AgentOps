@@ -69,6 +69,7 @@
   - trace 统计聚合查询：`/traces/stats`
   - 恢复告警记录、查询与 trace 关联查询
   - trace 聚合摘要查询：`/traces/{trace_id}/summary`
+  - trace 时间线聚合查询：`/traces/{trace_id}/timeline`
   - 告警统计聚合：`/alerts/stats`
   - 基础重试与熔断降级
   - 配置化恢复策略

@@ -430,6 +430,24 @@ class TraceSummaryResponse(BaseModel):
     summary: TraceSummaryPayload
 
 
+class TraceTimelineEventPayload(BaseModel):
+    happened_at: str
+    event_type: str
+    source_type: str
+    source_name: str
+    title: str
+    details: str = ""
+    trace_id: str
+    task_id: str = ""
+    session_id: str = ""
+    turn_id: str = ""
+
+
+class TraceTimelineResponse(BaseModel):
+    trace: TracePayload
+    events: list[TraceTimelineEventPayload] = Field(default_factory=list)
+
+
 class AlertEventPayload(BaseModel):
     id: str
     trace_id: str
