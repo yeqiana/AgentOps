@@ -69,6 +69,7 @@
 - trace 统计聚合查询
 - trace 聚合摘要查询
 - trace 时间线聚合查询
+- trace 图谱聚合查询
 - 模型与工具的重试、熔断、降级
 - 数据库驱动运行时配置中心
 - 运行时配置变更审计与回查
@@ -165,6 +166,7 @@ docs/
 - `GET /traces/stats`
 - `GET /traces/{trace_id}/summary`
 - `GET /traces/{trace_id}/timeline`
+- `GET /traces/{trace_id}/graph`
 - `GET /traces/{trace_id}/alerts`
 - `GET /alerts`
 - `GET /alerts/stats`

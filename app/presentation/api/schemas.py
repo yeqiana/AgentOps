@@ -448,6 +448,26 @@ class TraceTimelineResponse(BaseModel):
     events: list[TraceTimelineEventPayload] = Field(default_factory=list)
 
 
+class TraceGraphNodePayload(BaseModel):
+    node_id: str
+    node_type: str
+    title: str
+    subtitle: str = ""
+    happened_at: str = ""
+
+
+class TraceGraphEdgePayload(BaseModel):
+    source_id: str
+    target_id: str
+    edge_type: str
+
+
+class TraceGraphResponse(BaseModel):
+    trace: TracePayload
+    nodes: list[TraceGraphNodePayload] = Field(default_factory=list)
+    edges: list[TraceGraphEdgePayload] = Field(default_factory=list)
+
+
 class AlertEventPayload(BaseModel):
     id: str
     trace_id: str

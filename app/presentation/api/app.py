@@ -123,6 +123,9 @@ from app.presentation.api.schemas import (
     TraceResponse,
     TraceStatsResponse,
     TraceStatPayload,
+    TraceGraphEdgePayload,
+    TraceGraphNodePayload,
+    TraceGraphResponse,
     TraceTimelineEventPayload,
     TraceTimelineResponse,
     UploadAssetResponse,
@@ -253,6 +256,112 @@ def _build_trace_timeline_events(
         for item in alerts
     )
     return sorted(timeline, key=lambda item: item.happened_at)
+
+
+def _build_trace_graph(
+    trace: dict[str, object],
+    task_bundle: dict[str, object] | None,
+    route_decisions: list[dict[str, object]],
+    tool_results: list[dict[str, object]],
+    alerts: list[dict[str, object]],
+) -> tuple[list[TraceGraphNodePayload], list[TraceGraphEdgePayload]]:
+    """
+    Build graph-style trace view data for future visualization UIs.
+
+    What this is:
+    - A normalized node/edge projection over already persisted trace data.
+
+    What it does:
+    - Emits graph nodes and relationships for trace, task, route, tool, and alert records.
+
+    Why this is done this way:
+    - Stage 3 visualization work should not need to reverse-engineer raw API payloads.
+      A simple graph projection keeps the server-side protocol stable and UI-friendly.
+    """
+    trace_node_id = f'trace:{trace["trace_id"]}'
+    nodes: list[TraceGraphNodePayload] = [
+        TraceGraphNodePayload(
+            node_id=trace_node_id,
+            node_type="trace",
+            title=f'{trace["method"]} {trace["path"]}',
+            subtitle=f'status={trace["status_code"]}',
+            happened_at=str(trace["started_at"]),
+        )
+    ]
+    edges: list[TraceGraphEdgePayload] = []
+
+    task_node_id = ""
+    if task_bundle:
+        task = task_bundle["task"]
+        task_node_id = f'task:{task["id"]}'
+        nodes.append(
+            TraceGraphNodePayload(
+                node_id=task_node_id,
+                node_type="task",
+                title=str(task["id"]),
+                subtitle=f'status={task["status"]}',
+                happened_at=str(task["created_at"]),
+            )
+        )
+        edges.append(TraceGraphEdgePayload(source_id=trace_node_id, target_id=task_node_id, edge_type="owns_task"))
+
+    for item in route_decisions:
+        route_node_id = f'route:{item["id"] or item["trace_id"] + ":" + item["route_name"]}'
+        nodes.append(
+            TraceGraphNodePayload(
+                node_id=route_node_id,
+                node_type="route",
+                title=str(item["route_name"]),
+                subtitle=str(item["route_source"]),
+                happened_at=str(item["created_at"]),
+            )
+        )
+        edges.append(
+            TraceGraphEdgePayload(
+                source_id=task_node_id or trace_node_id,
+                target_id=route_node_id,
+                edge_type="route_decision",
+            )
+        )
+
+    for item in tool_results:
+        tool_node_id = f'tool:{item["id"] or item["trace_id"] + ":" + item["tool_name"]}'
+        nodes.append(
+            TraceGraphNodePayload(
+                node_id=tool_node_id,
+                node_type="tool",
+                title=str(item["tool_name"]),
+                subtitle=f'success={item["success"]}',
+                happened_at=str(item["created_at"]),
+            )
+        )
+        edges.append(
+            TraceGraphEdgePayload(
+                source_id=task_node_id or trace_node_id,
+                target_id=tool_node_id,
+                edge_type="tool_execution",
+            )
+        )
+
+    for item in alerts:
+        alert_node_id = f'alert:{item["id"]}'
+        nodes.append(
+            TraceGraphNodePayload(
+                node_id=alert_node_id,
+                node_type="alert",
+                title=str(item["event_code"]),
+                subtitle=str(item["severity"]),
+                happened_at=str(item["created_at"]),
+            )
+        )
+        edges.append(
+            TraceGraphEdgePayload(
+                source_id=trace_node_id,
+                target_id=alert_node_id,
+                edge_type="alert",
+            )
+        )
+    return nodes, edges
 
 
 def create_app():
@@ -1477,6 +1586,21 @@ def create_app():
                 alerts,
             ),
         )
+
+    @app.get("/traces/{trace_id}/graph", response_model=TraceGraphResponse, responses={404: {"model": ErrorResponse}})
+    def get_trace_graph(trace_id: str, request: Request) -> TraceGraphResponse:
+        require_permission(request, "trace.read")
+        normalized_trace_id = sanitize_text(trace_id)
+        trace = trace_service.get_trace(normalized_trace_id)
+        if not trace:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+
+        task_bundle = session_service.get_task(trace["task_id"]) if trace["task_id"] else None
+        route_decisions = task_bundle["route_decisions"] if task_bundle else session_service.list_route_decisions(trace_id=normalized_trace_id, limit=100, offset=0)
+        tool_results = task_bundle["tool_results"] if task_bundle else []
+        alerts = alert_service.list_alerts(trace_id=normalized_trace_id, limit=100, offset=0)
+        nodes, edges = _build_trace_graph(trace, task_bundle, route_decisions, tool_results, alerts)
+        return TraceGraphResponse(trace=TracePayload(**trace), nodes=nodes, edges=edges)
 
     @app.get("/alerts", response_model=AlertEventListResponse)
     def list_alerts(
