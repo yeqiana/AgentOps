@@ -611,6 +611,44 @@ class ApiHttpTests(unittest.TestCase):
         happened_at_values = [item["happened_at"] for item in timeline["events"]]
         self.assertEqual(happened_at_values, sorted(happened_at_values))
 
+    def test_trace_graph_endpoint_returns_nodes_and_edges(self) -> None:
+        response = self.client.post(
+            "/chat",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "trace-graph-user",
+                "session_title": "Trace Graph Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        get_alert_service().create_alert(
+            trace_id=payload["trace_id"],
+            source_type="llm",
+            source_name="mock",
+            severity="warning",
+            event_code="graph_test_alert",
+            message="trace graph integration test",
+            payload={"task_id": payload["task_id"]},
+        )
+
+        graph_response = self.client.get(f"/traces/{payload['trace_id']}/graph")
+        self.assertEqual(graph_response.status_code, 200)
+        graph = graph_response.json()
+        self.assertEqual(graph["trace"]["trace_id"], payload["trace_id"])
+        self.assertGreaterEqual(len(graph["nodes"]), 3)
+        self.assertGreaterEqual(len(graph["edges"]), 2)
+        node_types = {item["node_type"] for item in graph["nodes"]}
+        self.assertIn("trace", node_types)
+        self.assertIn("task", node_types)
+        self.assertIn("route", node_types)
+        self.assertIn("alert", node_types)
+        edge_types = {item["edge_type"] for item in graph["edges"]}
+        self.assertIn("owns_task", edge_types)
+        self.assertIn("route_decision", edge_types)
+        self.assertIn("alert", edge_types)
+
     def test_task_summary_endpoint_returns_aggregated_execution_view(self) -> None:
         response = self.client.post(
             "/chat",
