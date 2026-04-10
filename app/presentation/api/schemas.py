@@ -468,6 +468,19 @@ class TraceGraphResponse(BaseModel):
     edges: list[TraceGraphEdgePayload] = Field(default_factory=list)
 
 
+class TraceConsoleViewerPayload(BaseModel):
+    trace: TracePayload
+    summary: TraceSummaryPayload
+    timeline: list[TraceTimelineEventPayload] = Field(default_factory=list)
+    graph_nodes: list[TraceGraphNodePayload] = Field(default_factory=list)
+    graph_edges: list[TraceGraphEdgePayload] = Field(default_factory=list)
+    alerts: list["AlertEventPayload"] = Field(default_factory=list)
+
+
+class TraceConsoleViewerResponse(BaseModel):
+    viewer: TraceConsoleViewerPayload
+
+
 class AlertEventPayload(BaseModel):
     id: str
     trace_id: str

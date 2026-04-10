@@ -126,6 +126,8 @@ from app.presentation.api.schemas import (
     TraceGraphEdgePayload,
     TraceGraphNodePayload,
     TraceGraphResponse,
+    TraceConsoleViewerPayload,
+    TraceConsoleViewerResponse,
     TraceTimelineEventPayload,
     TraceTimelineResponse,
     UploadAssetResponse,
@@ -1601,6 +1603,114 @@ def create_app():
         alerts = alert_service.list_alerts(trace_id=normalized_trace_id, limit=100, offset=0)
         nodes, edges = _build_trace_graph(trace, task_bundle, route_decisions, tool_results, alerts)
         return TraceGraphResponse(trace=TracePayload(**trace), nodes=nodes, edges=edges)
+
+    @app.get(
+        "/console/traces/{trace_id}/viewer",
+        response_model=TraceConsoleViewerResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    def get_trace_console_viewer(trace_id: str, request: Request) -> TraceConsoleViewerResponse:
+        require_permission(request, "trace.read")
+        require_permission(request, "alert.read")
+        normalized_trace_id = sanitize_text(trace_id)
+        trace = trace_service.get_trace(normalized_trace_id)
+        if not trace:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+
+        task_bundle = session_service.get_task(trace["task_id"]) if trace["task_id"] else None
+        route_decisions = (
+            task_bundle["route_decisions"]
+            if task_bundle
+            else session_service.list_route_decisions(trace_id=normalized_trace_id, limit=100, offset=0)
+        )
+        task_events = task_bundle["task_events"] if task_bundle else []
+        tool_results = task_bundle["tool_results"] if task_bundle else []
+        alerts = alert_service.list_alerts(trace_id=normalized_trace_id, limit=100, offset=0)
+        timeline_events = _build_trace_timeline_events(
+            trace,
+            task_bundle,
+            route_decisions,
+            task_events,
+            tool_results,
+            alerts,
+        )
+        graph_nodes, graph_edges = _build_trace_graph(trace, task_bundle, route_decisions, tool_results, alerts)
+        alert_payloads = [
+            AlertEventPayload(
+                id=item["id"],
+                trace_id=item["trace_id"],
+                source_type=item["source_type"],
+                source_name=item["source_name"],
+                severity=item["severity"],
+                event_code=item["event_code"],
+                message=item["message"],
+                payload_json=item["payload_json"],
+                created_at=item["created_at"],
+                updated_at=item["updated_at"],
+            )
+            for item in alerts
+        ]
+
+        summary_payload = TraceSummaryPayload(
+            trace=TracePayload(**trace),
+            task=TaskPayload(**task_bundle["task"]) if task_bundle else None,
+            task_events=[
+                TaskEventPayload(
+                    id=item["id"],
+                    task_id=item["task_id"],
+                    session_id=item["session_id"],
+                    turn_id=item["turn_id"],
+                    trace_id=item["trace_id"],
+                    event_type=item["event_type"],
+                    event_message=item["event_message"],
+                    event_payload_json=item["event_payload_json"],
+                    created_at=item["created_at"],
+                )
+                for item in task_events
+            ],
+            tool_results=[
+                ToolResultPayload(
+                    id=item["id"],
+                    task_id=item["task_id"],
+                    session_id=item["session_id"],
+                    turn_id=item["turn_id"],
+                    trace_id=item["trace_id"],
+                    tool_name=item["tool_name"],
+                    success=item["success"],
+                    exit_code=item["exit_code"],
+                    stdout=item["stdout"],
+                    stderr=item["stderr"],
+                    created_at=item["created_at"],
+                )
+                for item in tool_results
+            ],
+            route_decisions=[
+                RouteDecisionPayload(
+                    id=item["id"],
+                    task_id=item["task_id"],
+                    session_id=item["session_id"],
+                    turn_id=item["turn_id"],
+                    trace_id=item["trace_id"],
+                    route_name=item["route_name"],
+                    route_reason=item["route_reason"],
+                    route_source=item["route_source"],
+                    created_at=item["created_at"],
+                )
+                for item in route_decisions
+            ],
+            alerts=alert_payloads,
+        )
+
+        return TraceConsoleViewerResponse(
+            viewer=TraceConsoleViewerPayload(
+                trace=TracePayload(**trace),
+                summary=summary_payload,
+                timeline=timeline_events,
+                graph_nodes=graph_nodes,
+                graph_edges=graph_edges,
+                alerts=alert_payloads,
+            )
+        )
 
     @app.get("/alerts", response_model=AlertEventListResponse)
     def list_alerts(

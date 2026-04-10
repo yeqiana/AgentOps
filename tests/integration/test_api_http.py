@@ -642,9 +642,42 @@ class ApiHttpTests(unittest.TestCase):
         node_types = {item["node_type"] for item in graph["nodes"]}
         self.assertIn("trace", node_types)
         self.assertIn("task", node_types)
+
+    def test_trace_console_viewer_endpoint_returns_console_ready_payload(self) -> None:
+        response = self.client.post(
+            "/chat",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "trace-viewer-user",
+                "session_title": "Trace Viewer Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        get_alert_service().create_alert(
+            trace_id=payload["trace_id"],
+            source_type="llm",
+            source_name="mock",
+            severity="warning",
+            event_code="viewer_test_alert",
+            message="trace viewer integration test",
+            payload={"task_id": payload["task_id"]},
+        )
+
+        viewer_response = self.client.get(f"/console/traces/{payload['trace_id']}/viewer")
+        self.assertEqual(viewer_response.status_code, 200)
+        viewer = viewer_response.json()["viewer"]
+        self.assertEqual(viewer["trace"]["trace_id"], payload["trace_id"])
+        self.assertEqual(viewer["summary"]["task"]["id"], payload["task_id"])
+        self.assertGreaterEqual(len(viewer["timeline"]), 4)
+        self.assertGreaterEqual(len(viewer["graph_nodes"]), 3)
+        self.assertGreaterEqual(len(viewer["graph_edges"]), 2)
+        self.assertEqual(viewer["alerts"][0]["event_code"], "viewer_test_alert")
+        node_types = {item["node_type"] for item in viewer["graph_nodes"]}
         self.assertIn("route", node_types)
         self.assertIn("alert", node_types)
-        edge_types = {item["edge_type"] for item in graph["edges"]}
+        edge_types = {item["edge_type"] for item in viewer["graph_edges"]}
         self.assertIn("owns_task", edge_types)
         self.assertIn("route_decision", edge_types)
         self.assertIn("alert", edge_types)
