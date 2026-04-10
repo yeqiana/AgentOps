@@ -123,6 +123,8 @@ from app.presentation.api.schemas import (
     TraceResponse,
     TraceStatsResponse,
     TraceStatPayload,
+    TraceTimelineEventPayload,
+    TraceTimelineResponse,
     UploadAssetResponse,
     WorkflowConfigPayload,
     WorkflowConfigResponse,
@@ -137,6 +139,120 @@ from app.workflow.registry import build_workflow_policy_registry
 
 
 logger = get_logger("presentation.api")
+
+
+def _build_trace_timeline_events(
+    trace: dict[str, object],
+    task_bundle: dict[str, object] | None,
+    route_decisions: list[dict[str, object]],
+    task_events: list[dict[str, object]],
+    tool_results: list[dict[str, object]],
+    alerts: list[dict[str, object]],
+) -> list[TraceTimelineEventPayload]:
+    """
+    Build a single chronological trace timeline from already-persisted records.
+
+    What this is:
+    - A lightweight API-side event normalizer for trace visualization.
+
+    What it does:
+    - Merges trace, task, route, tool, and alert records into one sorted list.
+
+    Why this is done this way:
+    - Stage 3 needs timeline-style data, but stage 2 already persists enough
+      records to derive it without introducing a new table.
+    """
+    timeline: list[TraceTimelineEventPayload] = [
+        TraceTimelineEventPayload(
+            happened_at=str(trace["started_at"]),
+            event_type="request_started",
+            source_type="trace",
+            source_name=str(trace["method"]),
+            title=f'{trace["method"]} {trace["path"]}',
+            details=f'auth_subject={trace["auth_subject"]}, status_code={trace["status_code"]}',
+            trace_id=str(trace["trace_id"]),
+            task_id=str(trace["task_id"]),
+            session_id=str(trace["session_id"]),
+            turn_id=str(trace["turn_id"]),
+        )
+    ]
+    if task_bundle:
+        task = task_bundle["task"]
+        timeline.append(
+            TraceTimelineEventPayload(
+                happened_at=str(task["created_at"]),
+                event_type="task_recorded",
+                source_type="task",
+                source_name=str(task["status"]),
+                title=str(task["id"]),
+                details=f'route={task["route_name"]}, execution_mode={task["execution_mode"]}',
+                trace_id=str(task["trace_id"]),
+                task_id=str(task["id"]),
+                session_id=str(task["session_id"]),
+                turn_id=str(task["turn_id"]),
+            )
+        )
+    timeline.extend(
+        TraceTimelineEventPayload(
+            happened_at=str(item["created_at"]),
+            event_type=str(item["event_type"]),
+            source_type="task_event",
+            source_name=str(item["event_type"]),
+            title=str(item["event_message"]),
+            details=str(item["event_payload_json"]),
+            trace_id=str(item["trace_id"]),
+            task_id=str(item["task_id"]),
+            session_id=str(item["session_id"]),
+            turn_id=str(item["turn_id"]),
+        )
+        for item in task_events
+    )
+    timeline.extend(
+        TraceTimelineEventPayload(
+            happened_at=str(item["created_at"]),
+            event_type="route_decision",
+            source_type="route",
+            source_name=str(item["route_source"]),
+            title=str(item["route_name"]),
+            details=str(item["route_reason"]),
+            trace_id=str(item["trace_id"]),
+            task_id=str(item["task_id"]),
+            session_id=str(item["session_id"]),
+            turn_id=str(item["turn_id"]),
+        )
+        for item in route_decisions
+    )
+    timeline.extend(
+        TraceTimelineEventPayload(
+            happened_at=str(item["created_at"]),
+            event_type="tool_result",
+            source_type="tool",
+            source_name=str(item["tool_name"]),
+            title=f'{item["tool_name"]} success={item["success"]}',
+            details=f'exit_code={item["exit_code"]}',
+            trace_id=str(item["trace_id"]),
+            task_id=str(item["task_id"]),
+            session_id=str(item["session_id"]),
+            turn_id=str(item["turn_id"]),
+        )
+        for item in tool_results
+    )
+    timeline.extend(
+        TraceTimelineEventPayload(
+            happened_at=str(item["created_at"]),
+            event_type="alert",
+            source_type="alert",
+            source_name=str(item["source_type"]),
+            title=str(item["event_code"]),
+            details=str(item["message"]),
+            trace_id=str(item["trace_id"]),
+            task_id=str(trace["task_id"]),
+            session_id=str(trace["session_id"]),
+            turn_id=str(trace["turn_id"]),
+        )
+        for item in alerts
+    )
+    return sorted(timeline, key=lambda item: item.happened_at)
 
 
 def create_app():
@@ -1335,6 +1451,31 @@ def create_app():
                     for item in alerts
                 ],
             )
+        )
+
+    @app.get("/traces/{trace_id}/timeline", response_model=TraceTimelineResponse, responses={404: {"model": ErrorResponse}})
+    def get_trace_timeline(trace_id: str, request: Request) -> TraceTimelineResponse:
+        require_permission(request, "trace.read")
+        normalized_trace_id = sanitize_text(trace_id)
+        trace = trace_service.get_trace(normalized_trace_id)
+        if not trace:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+
+        task_bundle = session_service.get_task(trace["task_id"]) if trace["task_id"] else None
+        route_decisions = task_bundle["route_decisions"] if task_bundle else session_service.list_route_decisions(trace_id=normalized_trace_id, limit=100, offset=0)
+        task_events = task_bundle["task_events"] if task_bundle else []
+        tool_results = task_bundle["tool_results"] if task_bundle else []
+        alerts = alert_service.list_alerts(trace_id=normalized_trace_id, limit=100, offset=0)
+        return TraceTimelineResponse(
+            trace=TracePayload(**trace),
+            events=_build_trace_timeline_events(
+                trace,
+                task_bundle,
+                route_decisions,
+                task_events,
+                tool_results,
+                alerts,
+            ),
         )
 
     @app.get("/alerts", response_model=AlertEventListResponse)
