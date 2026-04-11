@@ -2,22 +2,19 @@
 
 ## 项目简介
 
-`AgentOps` 是一个面向企业内部场景的 AI Agent 后端底座，目标不是做单点聊天，而是把“模型 + 工具 + 任务 + 治理 + 排障”这条链路沉淀成可持续演进的运行时平台。
+`AgentOps` 是一个面向企业内部场景的 AI Agent 后端底座，目标不是单点聊天应用，而是建设“模型 + 工具 + 任务 + 治理 + 排障”的可持续演进运行时平台。
 
-当前项目重点是：
-- 多模态输入与工具增强
-- 统一鉴权、限流、幂等、RBAC
-- trace、告警、恢复治理
-- trace 聚合摘要查询
-- 请求路由中台最小版
-- 多 Agent 最小编排
-- 运行时配置中心
-- 流式对话与异步任务预留
+当前项目已完成：
+- 阶段 1：分析型 Agent 底座
+- 阶段 2：企业级 Agent 运行时最小版
 
-当前阶段：
-- 阶段 1：已完成
-- 阶段 2：开发中，当前进度约 `98%`
-- 阶段 3：规划中
+当前项目状态：
+- 阶段 1：已结项
+- 阶段 2：已结项
+- 阶段 3：待启动
+
+当前测试基线：
+- `111 tests, OK`
 
 ## 当前能力
 
@@ -25,7 +22,7 @@
 - CLI 流式回答输出
 - HTTP API
 - HTTP SSE 流式对话：`POST /chat/stream`
-- 异步任务提交预留：`POST /tasks/submit`
+- 异步任务提交：`POST /tasks/submit`
 - 异步任务运行时快照：`GET /tasks/runtime`
 - 异步任务取消：`POST /tasks/{task_id}/cancel`
 - 异步任务重试：`POST /tasks/{task_id}/retry`
@@ -35,45 +32,29 @@
 - 任务事件查询：`GET /tasks/{task_id}/events`
 - 多模型接入：OpenAI 兼容协议 + `mock`
 - 多模态输入：文本、图片、音频、视频、文件
-- 上传型资产入口：`POST /assets/upload`
-- 资产分析入口：`POST /assets/analyze`
+- 资产上传：`POST /assets/upload`
+- 资产分析：`POST /assets/analyze`
 - 工具注册与自动调用
 - 本地工具链：OCR、ASR、视频探测、抽帧、抽音轨
 - 请求路由中台最小版
-- 路由决策持久化、查询与统计
-- 路由策略预览
-- 路由配置模板与校验：`GET /routing/config/template`，并对 `routing` 配置写入执行 key/type 校验
-- 异步任务事件持久化与回查
-- 最小多 Agent 编排：
-  - `router`
-  - `debate`
-  - `arbitration`
-  - `critic`
-  - `review`
-- 正式角色协议：
-  - `support`
-  - `challenge`
-  - `planner`
-  - `executor`
-  - `arbitration`
-  - `critic`
-  - `reviewer`
-- 可切换执行协议：
-  - `delegated`
-  - `standard`
+- 路由策略预览：`POST /routing/preview`
+- 路由决策持久化、查询与统计，任务主记录同步保留 `route_source`
+- 路由权限细分：`routing.read / routing.preview / routing.manage`
+- 路由规则版本快照：`/routing/config/versions`
+- 路由版本回滚：`POST /routing/config/versions/{version_no}/restore`
+- 最小多 Agent 编排：`router / debate / arbitration / critic / review`
+- 正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
+- 可切换执行协议：`delegated / standard`
 - 统一鉴权
 - 最小 RBAC
 - 限流与幂等
-- trace 查询
-- 告警记录、查询与 trace 关联查询
-- trace 统计聚合查询
-- trace 聚合摘要查询
-- trace 时间线聚合查询
-- trace 图谱聚合查询
+- trace 查询、统计、摘要、时间线、图谱
+- 控制台 trace 查看器聚合查询
+- alert 查询、统计及 trace 关联查询
 - 模型与工具的重试、熔断、降级
 - 数据库驱动运行时配置中心
-- 运行时配置变更审计与回查
-- 数据库驱动角色注册
+- 配置变更审计与回查
+- 控制台聚合总览
 
 ## 快速开始
 
@@ -132,13 +113,12 @@ docs/
 - `GET /tasks`
 - `GET /tasks/stats`
 - `GET /tasks/runtime`
-- `GET /operations/overview`
-- `POST /tasks/{task_id}/cancel`
-- `POST /tasks/{task_id}/retry`
 - `GET /tasks/{task_id}`
 - `GET /tasks/{task_id}/summary`
 - `GET /tasks/{task_id}/events`
 - `GET /tasks/{task_id}/routes`
+- `POST /tasks/{task_id}/cancel`
+- `POST /tasks/{task_id}/retry`
 - `GET /sessions`
 - `GET /sessions/{session_id}`
 - `GET /sessions/{session_id}/summary`
@@ -154,6 +134,9 @@ docs/
 - `PUT /workflow/roles/{role_key}`
 - `GET /routing/config`
 - `GET /routing/config/template`
+- `GET /routing/config/events`
+- `GET /routing/config/versions`
+- `POST /routing/config/versions/{version_no}/restore`
 - `POST /routing/preview`
 - `GET /routes`
 - `GET /routes/stats`
@@ -167,10 +150,12 @@ docs/
 - `GET /traces/{trace_id}/summary`
 - `GET /traces/{trace_id}/timeline`
 - `GET /traces/{trace_id}/graph`
+- `GET /console/traces/{trace_id}/viewer`
 - `GET /traces/{trace_id}/alerts`
 - `GET /alerts`
 - `GET /alerts/stats`
 - `GET /alerts/{alert_id}`
+- `GET /operations/overview`
 
 ## 数据库概览
 
@@ -179,6 +164,7 @@ docs/
 - `sys_user`
 - `sys_request_trace`
 - `sys_runtime_config`
+- `sys_runtime_config_event`
 - `sys_workflow_role`
 - `sys_alert_event`
 - `sys_auth_role`
@@ -197,23 +183,14 @@ docs/
 
 ## 文档入口
 
-企业级正式文档：
+当前状态与正式文档，优先查看：
 - [企业文档总索引](docs/enterprise/README.md)
-- [总体设计](docs/enterprise/总体设计.md)
-- [详细设计说明书](docs/enterprise/详细设计说明书.md)
-- [数据库设计说明书](docs/enterprise/数据库设计说明书.md)
 - [开发计划](docs/enterprise/开发计划.md)
-- [测试报告](docs/enterprise/测试报告.md)
-- [功能清单](docs/enterprise/功能清单.md)
-- [评审报告](docs/enterprise/评审报告.md)
+- [阶段1最终验收结论单](docs/enterprise/阶段1最终验收结论单.md)
+- [阶段2结项复核单](docs/enterprise/阶段2结项复核单.md)
 
-架构规划资料：
+规划资料索引：
 - [架构文档总索引](docs/architecture/README.md)
-- [架构规划资料](docs/architecture/plans)
-
-提示词与归档资料：
-- [Prompts 索引](docs/prompts/README.md)
-- [AI Prompts 索引](docs/ai-prompts/README.md)
 
 如需查看每次阶段开发内容，直接查看 git 历史：
 
