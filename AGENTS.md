@@ -3,8 +3,10 @@
 ## 项目定位
 
 - 这是一个基于 Python、LangGraph 和 OpenAI 兼容协议的 Agent 底座项目
-- 阶段 1 已完成，阶段 2 正在开发
-- 当前重点是治理底座、多 Agent 编排、运行时配置中心、数据库规范、可排障能力、请求路由中台和异步任务深化
+- 阶段 1 已完成并结项
+- 阶段 2 已完成并结项
+- 阶段 3 尚未启动
+- 当前重点从阶段 2 收尾转向阶段 3 规划与前置开发
 - 当前已支持 CLI 与 API 的流式对话输出
 
 ## 结构约束
@@ -53,25 +55,28 @@
 - 归档内容应具备可检索性，不要使用无语义文件名
 - 归档方向建议按 `frontend / backend / architecture / product` 分类
 
-## 当前阶段重点
+## 当前阶段状态
 
-- 阶段 2 已落地：
-  - 请求路由中台最小版：`request_route_service`
-  - 路由决策持久化、查询与统计
-  - 路由策略预览：`/routing/preview`
+- 阶段 1 已完成：
+  - 分析型 Agent 底座闭环
+  - 多模态输入与工具链
+  - 数据库、API、日志与测试基础
+- 阶段 2 已完成：
+  - 请求路由中台最小版
+  - 路由决策持久化、查询、统计与预览，任务主记录同步保留 `route_source`
   - 路由配置模板与校验：`/routing/config/template` + `routing` scope key/type validation
-  - 统一鉴权
-  - 最小 RBAC
+  - 路由配置审计查询：`/routing/config/events`
+  - 路由规则版本快照：`/routing/config/versions` + `current_version`
+  - 路由版本回滚：`POST /routing/config/versions/{version_no}/restore`
+  - 路由权限细分：`routing.read / routing.preview / routing.manage`
+  - 统一鉴权与最小 RBAC
   - 主体授权关系回查
   - 角色权限矩阵查询
   - 限流与幂等
   - trace service
-  - trace 统计聚合查询：`/traces/stats`
-  - 恢复告警记录、查询与 trace 关联查询
-  - trace 聚合摘要查询：`/traces/{trace_id}/summary`
-  - trace 时间线聚合查询：`/traces/{trace_id}/timeline`
-  - trace 图谱聚合查询：`/traces/{trace_id}/graph`
-  - 告警统计聚合：`/alerts/stats`
+  - trace 统计、摘要、时间线、图谱与告警关联查询
+  - 控制台 trace 查看器聚合查询：`/console/traces/{trace_id}/viewer`
+  - 告警统计聚合
   - 基础重试与熔断降级
   - 配置化恢复策略
   - `router / debate / arbitration / critic / review` 最小多角色编排
@@ -81,24 +86,16 @@
   - 正式角色协议：`support / challenge / planner / executor / arbitration / critic / reviewer`
   - 可切换执行协议：`delegated / standard`
   - 流式对话输出：CLI 流式打印，API `SSE` 流式返回
-  - 异步任务深化：`/tasks/submit` + 本地后台执行器 + `queued/running/completed/failed` 状态链
-  - 异步任务运行时快照：`/tasks/runtime`
-  - 异步任务取消：`/tasks/{task_id}/cancel`
-  - 异步任务重试：`/tasks/{task_id}/retry`
-  - 任务状态统计：`/tasks/stats`
-  - 任务聚合摘要：`/tasks/{task_id}/summary`
-  - 会话聚合摘要：`/sessions/{session_id}/summary`
-  - 任务事件持久化与查询：`biz_task_event`、`/tasks/{task_id}/events`
-  - 任务状态聚合统计：`/tasks/stats`
-  - 控制台聚合总览：`/operations/overview`
-- 阶段 2 后续继续建设：
-  - 失败恢复增强
-  - 策略中心深化
-  - 多 Agent 角色协议扩展
-  - 异步任务体系深化
+  - 异步任务深化：提交、运行、取消、重试、事件追踪、运行时快照
+  - 任务状态统计、任务聚合摘要、会话聚合摘要
+  - 控制台聚合总览
 - 阶段 3 规划：
   - 可视化 trace
   - 观测与监控面板
+  - 完整异步任务平台
+  - 完整权限治理体系
+  - 成本与配额治理
+  - 模型路由与策略引擎
 
 ## Git 提交规则
 
@@ -121,3 +118,7 @@
   3. 建议的 commit message
 - 只有在用户明确确认后，才执行 `git commit`
 
+## 继承说明
+
+- 通用协作规则、开发流程、测试要求、风险检查、提交规则、设计规范等，统一遵循项目同级全局 [AGENTS.md](/D:/workspace/YeQianWorkSpace/Agent/AGENTS.md)
+- 本文件仅保留 AgentOps 项目特有的定位、结构、数据库、文档与阶段约束
