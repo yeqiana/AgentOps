@@ -18,6 +18,7 @@ Why this is done this way:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.domain.errors import ValidationError
@@ -73,6 +74,88 @@ class RuntimeConfigService:
     def list_configs(self, *, scope: str | None = None) -> list[RuntimeConfigRecord]:
         return self.repository.list_configs(scope=scope)
 
+    def list_config_events(
+        self,
+        *,
+        scope: str | None = None,
+        key: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        return self.repository.list_config_events(
+            scope=scope,
+            key=key,
+            limit=limit,
+            offset=offset,
+        )
+
+    def get_latest_routing_config_version(self) -> dict[str, Any] | None:
+        record = self.repository.get_latest_routing_config_version()
+        return self._to_routing_config_version_payload(record) if record else None
+
+    def list_routing_config_versions(self, *, limit: int = 20, offset: int = 0) -> list[dict[str, Any]]:
+        return [
+            self._to_routing_config_version_payload(record)
+            for record in self.repository.list_routing_config_versions(limit=limit, offset=offset)
+        ]
+
+    def diff_routing_config_versions(self, *, from_version: int, to_version: int) -> dict[str, Any]:
+        from_record = self.repository.get_routing_config_version(version_no=from_version)
+        if not from_record:
+            raise ValidationError(f"routing 配置版本 `{from_version}` 不存在。")
+        to_record = self.repository.get_routing_config_version(version_no=to_version)
+        if not to_record:
+            raise ValidationError(f"routing 配置版本 `{to_version}` 不存在。")
+
+        from_snapshot = json.loads(from_record["snapshot_json"])
+        to_snapshot = json.loads(to_record["snapshot_json"])
+        from_flat = self._flatten_routing_snapshot(from_snapshot)
+        to_flat = self._flatten_routing_snapshot(to_snapshot)
+        diff_items: list[dict[str, str]] = []
+        for field_path in sorted(set(from_flat) | set(to_flat)):
+            before_value = from_flat.get(field_path, "")
+            after_value = to_flat.get(field_path, "")
+            if before_value != after_value:
+                diff_items.append(
+                    {
+                        "field_path": field_path,
+                        "before_value": before_value,
+                        "after_value": after_value,
+                    }
+                )
+        return {
+            "from_version": from_version,
+            "to_version": to_version,
+            "diff_items": diff_items,
+        }
+
+    def restore_routing_config_version(self, *, version_no: int, updated_by: str) -> dict[str, Any]:
+        record = self.repository.get_routing_config_version(version_no=version_no)
+        if not record:
+            raise ValidationError(f"routing 配置版本 `{version_no}` 不存在。")
+
+        snapshot = json.loads(record["snapshot_json"])
+        configs = self._routing_snapshot_to_config_items(snapshot)
+        self.repository.replace_scope_configs(
+            scope="routing",
+            configs=configs,
+            updated_by=updated_by,
+            description=f"restore from routing version {version_no}",
+        )
+        self.repository.create_routing_config_version(
+            snapshot=snapshot,
+            changed_key=f"restore:{version_no}",
+            changed_value=str(version_no),
+            change_action="restore",
+            updated_by=updated_by,
+        )
+        latest = self.get_latest_routing_config_version()
+        return {
+            "restored_from_version": version_no,
+            "current_version": latest["version_no"] if latest else None,
+            "snapshot": snapshot,
+        }
+
     def upsert_config(
         self,
         *,
@@ -83,7 +166,7 @@ class RuntimeConfigService:
         description: str,
         updated_by: str,
     ) -> RuntimeConfigRecord:
-        return self.repository.upsert_config(
+        item = self.repository.upsert_config(
             scope=scope,
             key=key,
             value=value,
@@ -91,6 +174,15 @@ class RuntimeConfigService:
             description=description,
             updated_by=updated_by,
         )
+        if scope.strip().lower() == "routing":
+            self.repository.create_routing_config_version(
+                snapshot=self.get_routing_config_snapshot(),
+                changed_key=key,
+                changed_value=value,
+                change_action="upsert",
+                updated_by=updated_by,
+            )
+        return item
 
     def validate_config_entry(self, *, scope: str, key: str, value: str, value_type: str) -> None:
         normalized_scope = scope.strip().lower()
@@ -323,6 +415,49 @@ class RuntimeConfigService:
             ),
         }
 
+    def get_routing_config_snapshot(self) -> dict[str, dict[str, Any]]:
+        effective = self.get_effective_routing_config()
+        return {
+            "image_route": {
+                "route_name": effective["image_route_name"],
+                "route_reason": effective["image_route_reason"],
+            },
+            "audio_route": {
+                "route_name": effective["audio_route_name"],
+                "route_reason": effective["audio_route_reason"],
+            },
+            "video_route": {
+                "route_name": effective["video_route_name"],
+                "route_reason": effective["video_route_reason"],
+            },
+            "file_route": {
+                "route_name": effective["file_route_name"],
+                "route_reason": effective["file_route_reason"],
+            },
+            "tool_augmented_route": {
+                "route_name": effective["tool_augmented_route_name"],
+                "route_reason": effective["tool_augmented_route_reason"],
+            },
+            "deliberation_route": {
+                "route_name": effective["deliberation_route_name"],
+                "route_reason": effective["deliberation_route_reason"],
+                "enabled": effective["deliberation_enabled"],
+                "keywords": effective["deliberation_keywords"],
+                "message_threshold": 0,
+            },
+            "contextual_route": {
+                "route_name": effective["contextual_route_name"],
+                "route_reason": effective["contextual_route_reason"],
+                "enabled": effective["contextual_message_threshold"] > 0,
+                "keywords": [],
+                "message_threshold": effective["contextual_message_threshold"],
+            },
+            "default_route": {
+                "route_name": effective["default_route_name"],
+                "route_reason": effective["default_route_reason"],
+            },
+        }
+
     def _load_scope_overrides(self, scope: str) -> dict[str, str]:
         rows = self.repository.list_configs(scope=scope)
         return {row["config_key"]: row["config_value"] for row in rows}
@@ -349,6 +484,146 @@ class RuntimeConfigService:
             "default_route_name": {"value_type": "str", "description": "默认兜底路由名称。", "example_value": "direct_chat"},
             "default_route_reason": {"value_type": "str", "description": "默认兜底路由原因。", "example_value": "当前是普通文本任务，优先走标准规划与回答链。"},
         }
+
+    def list_routing_config_template_items(self) -> list[dict[str, str]]:
+        return [
+            {
+                "config_key": key,
+                "value_type": item["value_type"],
+                "description": item["description"],
+                "example_value": item["example_value"],
+            }
+            for key, item in self.get_routing_config_template().items()
+        ]
+
+    @staticmethod
+    def _to_routing_config_version_payload(record: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": record["id"],
+            "version_no": int(record["version_no"]),
+            "snapshot": json.loads(record["snapshot_json"]),
+            "changed_key": record["changed_key"],
+            "changed_value": record["changed_value"],
+            "change_action": record["change_action"],
+            "created_by": record["created_by"],
+            "updated_by": record["updated_by"],
+            "created_at": record["created_at"],
+            "updated_at": record["updated_at"],
+        }
+
+    @staticmethod
+    def _routing_snapshot_to_config_items(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+        return [
+            {
+                "config_key": "image_route_name",
+                "config_value": snapshot["image_route"]["route_name"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "image_route_reason",
+                "config_value": snapshot["image_route"]["route_reason"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "audio_route_name",
+                "config_value": snapshot["audio_route"]["route_name"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "audio_route_reason",
+                "config_value": snapshot["audio_route"]["route_reason"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "video_route_name",
+                "config_value": snapshot["video_route"]["route_name"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "video_route_reason",
+                "config_value": snapshot["video_route"]["route_reason"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "file_route_name",
+                "config_value": snapshot["file_route"]["route_name"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "file_route_reason",
+                "config_value": snapshot["file_route"]["route_reason"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "tool_augmented_route_name",
+                "config_value": snapshot["tool_augmented_route"]["route_name"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "tool_augmented_route_reason",
+                "config_value": snapshot["tool_augmented_route"]["route_reason"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "deliberation_enabled",
+                "config_value": "true" if snapshot["deliberation_route"]["enabled"] else "false",
+                "value_type": "bool",
+            },
+            {
+                "config_key": "deliberation_keywords",
+                "config_value": ",".join(snapshot["deliberation_route"]["keywords"]),
+                "value_type": "csv",
+            },
+            {
+                "config_key": "deliberation_route_name",
+                "config_value": snapshot["deliberation_route"]["route_name"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "deliberation_route_reason",
+                "config_value": snapshot["deliberation_route"]["route_reason"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "contextual_message_threshold",
+                "config_value": str(snapshot["contextual_route"]["message_threshold"]),
+                "value_type": "int",
+            },
+            {
+                "config_key": "contextual_route_name",
+                "config_value": snapshot["contextual_route"]["route_name"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "contextual_route_reason",
+                "config_value": snapshot["contextual_route"]["route_reason"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "default_route_name",
+                "config_value": snapshot["default_route"]["route_name"],
+                "value_type": "str",
+            },
+            {
+                "config_key": "default_route_reason",
+                "config_value": snapshot["default_route"]["route_reason"],
+                "value_type": "str",
+            },
+        ]
+
+    @staticmethod
+    def _flatten_routing_snapshot(snapshot: dict[str, Any]) -> dict[str, str]:
+        flattened: dict[str, str] = {}
+        for route_key, route_value in snapshot.items():
+            if isinstance(route_value, dict):
+                for field_key, field_value in route_value.items():
+                    if isinstance(field_value, list):
+                        flattened[f"{route_key}.{field_key}"] = ",".join(str(item) for item in field_value)
+                    else:
+                        flattened[f"{route_key}.{field_key}"] = str(field_value)
+            else:
+                flattened[route_key] = str(route_value)
+        return flattened
 
     @staticmethod
     def _as_bool(raw_value: str | None, fallback: bool) -> bool:

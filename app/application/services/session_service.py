@@ -460,6 +460,7 @@ class SessionService:
             "protocol_summary": state["protocol_summary"],
             "route_name": state["route_name"],
             "route_reason": state["route_reason"],
+            "route_source": state["route_source"],
             "plan": state["plan"],
             "debate_summary": state["debate_summary"],
             "arbitration_summary": state["arbitration_summary"],

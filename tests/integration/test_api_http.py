@@ -197,6 +197,96 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(template_map["deliberation_enabled"]["value_type"], "bool")
         self.assertEqual(template_map["contextual_message_threshold"]["value_type"], "int")
 
+    def test_routing_config_versions_endpoint_returns_version_snapshots(self) -> None:
+        first_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "routing",
+                "config_key": "default_route_name",
+                "config_value": "direct_chat",
+                "value_type": "str",
+                "description": "version test 1",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(first_response.status_code, 200)
+
+        second_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "routing",
+                "config_key": "contextual_message_threshold",
+                "config_value": "5",
+                "value_type": "int",
+                "description": "version test 2",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(second_response.status_code, 200)
+
+        config_response = self.client.get("/routing/config")
+        self.assertEqual(config_response.status_code, 200)
+        self.assertEqual(config_response.json()["current_version"], 2)
+
+        versions_response = self.client.get("/routing/config/versions")
+        self.assertEqual(versions_response.status_code, 200)
+        versions = versions_response.json()["versions"]
+        self.assertGreaterEqual(len(versions), 2)
+        self.assertEqual(versions[0]["version_no"], 2)
+        self.assertEqual(versions[0]["changed_key"], "contextual_message_threshold")
+        self.assertEqual(versions[0]["snapshot"]["contextual_route"]["message_threshold"], 5)
+        self.assertEqual(versions[1]["version_no"], 1)
+        self.assertEqual(versions[1]["changed_key"], "default_route_name")
+
+    def test_routing_config_version_restore_restores_snapshot_and_creates_new_version(self) -> None:
+        first_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "routing",
+                "config_key": "contextual_message_threshold",
+                "config_value": "5",
+                "value_type": "int",
+                "description": "restore test 1",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(first_response.status_code, 200)
+
+        second_response = self.client.put(
+            "/config/runtime",
+            json={
+                "config_scope": "routing",
+                "config_key": "contextual_message_threshold",
+                "config_value": "9",
+                "value_type": "int",
+                "description": "restore test 2",
+                "updated_by": "tester",
+            },
+        )
+        self.assertEqual(second_response.status_code, 200)
+
+        restore_response = self.client.post(
+            "/routing/config/versions/1/restore",
+            json={"updated_by": "tester"},
+        )
+        self.assertEqual(restore_response.status_code, 200)
+        restore_payload = restore_response.json()
+        self.assertEqual(restore_payload["restored_from_version"], 1)
+        self.assertEqual(restore_payload["current_version"], 3)
+        self.assertEqual(restore_payload["routing"]["contextual_route"]["message_threshold"], 5)
+
+        config_response = self.client.get("/routing/config")
+        self.assertEqual(config_response.status_code, 200)
+        self.assertEqual(config_response.json()["current_version"], 3)
+        self.assertEqual(config_response.json()["routing"]["contextual_route"]["message_threshold"], 5)
+
+        versions_response = self.client.get("/routing/config/versions")
+        self.assertEqual(versions_response.status_code, 200)
+        versions = versions_response.json()["versions"]
+        self.assertEqual(versions[0]["version_no"], 3)
+        self.assertEqual(versions[0]["change_action"], "restore")
+        self.assertEqual(versions[0]["changed_key"], "restore:1")
+
     def test_routing_preview_endpoint_returns_predicted_route(self) -> None:
         response = self.client.post(
             "/routing/preview",
@@ -682,6 +772,84 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIn("route_decision", edge_types)
         self.assertIn("alert", edge_types)
 
+    def test_console_trace_list_endpoint_returns_stable_fields_and_filters(self) -> None:
+        response = self.client.post(
+            "/chat",
+            json={
+                "message": "甯垜鍐欎竴鍙ョ畝鐭殑鑷垜浠嬬粛",
+                "user_name": "trace-list-user",
+                "session_title": "Trace List Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        get_alert_service().create_alert(
+            trace_id=payload["trace_id"],
+            source_type="llm",
+            source_name="mock",
+            severity="warning",
+            event_code="list_test_alert",
+            message="trace list integration test",
+            payload={"task_id": payload["task_id"]},
+        )
+
+        list_response = self.client.get("/console/traces?page=1&page_size=20")
+        self.assertEqual(list_response.status_code, 200)
+        list_payload = list_response.json()
+        self.assertEqual(list_payload["page"], 1)
+        self.assertEqual(list_payload["page_size"], 20)
+        self.assertGreaterEqual(list_payload["total"], 1)
+        self.assertIn("has_next", list_payload)
+
+        matched = next(item for item in list_payload["items"] if item["trace_id"] == payload["trace_id"])
+        self.assertEqual(matched["task_id"], payload["task_id"])
+        self.assertEqual(matched["session_id"], payload["session_id"])
+        self.assertEqual(matched["method"], "POST")
+        self.assertEqual(matched["path"], "/chat")
+        self.assertTrue(matched["route_name"])
+        self.assertIn("execution_mode", matched)
+        self.assertIn("review_status", matched)
+        self.assertGreaterEqual(matched["alert_count"], 1)
+        self.assertTrue(matched["last_event_at"])
+
+        filtered_response = self.client.get(
+            "/console/traces"
+            f"?trace_id={payload['trace_id']}"
+            f"&task_id={payload['task_id']}"
+            f"&session_id={payload['session_id']}"
+            "&method=POST"
+            "&path=/chat"
+            "&status_code=200"
+            f"&route_name={matched['route_name']}"
+            "&page=1&page_size=10"
+        )
+        self.assertEqual(filtered_response.status_code, 200)
+        filtered_items = filtered_response.json()["items"]
+        self.assertEqual(len(filtered_items), 1)
+        self.assertEqual(filtered_items[0]["trace_id"], payload["trace_id"])
+
+    def test_console_trace_list_endpoint_keeps_trace_without_task_visible(self) -> None:
+        trace_service = TraceService()
+        trace_service.begin_request(
+            trace_id="trace_console_only",
+            request_id="req_console_only",
+            method="GET",
+            path="/health",
+            auth_subject="tester",
+            auth_type="api_key",
+            idempotency_key="",
+        )
+        trace_service.finish_request("trace_console_only", status_code=200)
+
+        response = self.client.get("/console/traces?trace_id=trace_console_only")
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["trace_id"], "trace_console_only")
+        self.assertEqual(items[0]["task_id"], "")
+        self.assertEqual(items[0]["route_name"], "")
+
     def test_task_summary_endpoint_returns_aggregated_execution_view(self) -> None:
         response = self.client.post(
             "/chat",
@@ -898,6 +1066,7 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(task_payload["task"]["execution_mode"], payload["execution_mode"])
         self.assertEqual(task_payload["task"]["protocol_summary"], payload["protocol_summary"])
         self.assertEqual(task_payload["task"]["route_name"], payload["route_name"])
+        self.assertTrue(task_payload["task"]["route_source"])
         self.assertEqual(task_payload["task"]["debate_summary"], payload["debate_summary"])
         self.assertEqual(task_payload["task"]["arbitration_summary"], payload["arbitration_summary"])
         self.assertEqual(task_payload["task"]["critic_summary"], payload["critic_summary"])
@@ -908,6 +1077,7 @@ class ApiHttpTests(unittest.TestCase):
         self.assertIsInstance(task_payload["route_decisions"], list)
         self.assertGreaterEqual(len(task_payload["route_decisions"]), 1)
         self.assertEqual(task_payload["route_decisions"][0]["route_name"], payload["route_name"])
+        self.assertEqual(task_payload["route_decisions"][0]["route_source"], task_payload["task"]["route_source"])
 
         task_routes_response = self.client.get(f"/tasks/{payload['task_id']}/routes")
         self.assertEqual(task_routes_response.status_code, 200)
@@ -1405,6 +1575,124 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(forbidden_response.status_code, 403)
         forbidden_payload = forbidden_response.json()
         self.assertEqual(forbidden_payload["code"], "authorization_error")
+
+        for name in ["APP_AUTH_ENABLED", "APP_RBAC_ENABLED", "APP_API_KEYS", "APP_AUTH_ADMIN_SUBJECTS"]:
+            os.environ.pop(name, None)
+
+    def test_routing_permissions_are_scoped_separately_from_task_and_config_permissions(self) -> None:
+        os.environ["APP_AUTH_ENABLED"] = "true"
+        os.environ["APP_RBAC_ENABLED"] = "true"
+        os.environ["APP_API_KEYS"] = "demo-key,viewer-key,operator-key"
+        os.environ["APP_AUTH_ADMIN_SUBJECTS"] = "apikey:demo-key"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        admin_headers = {"X-API-Key": "demo-key"}
+
+        client.put(
+            "/auth/subjects/apikey:viewer-k/roles",
+            headers=admin_headers,
+            json={"role_keys": ["viewer"], "updated_by": "admin-test"},
+        )
+        client.put(
+            "/auth/subjects/apikey:operator/roles",
+            headers=admin_headers,
+            json={"role_keys": ["operator"], "updated_by": "admin-test"},
+        )
+
+        viewer_headers = {"X-API-Key": "viewer-key"}
+        operator_headers = {"X-API-Key": "operator-key"}
+
+        config_response = client.get("/routing/config", headers=viewer_headers)
+        self.assertEqual(config_response.status_code, 200)
+
+        preview_forbidden = client.post(
+            "/routing/preview",
+            headers=viewer_headers,
+            json={"input": "测试路由预览", "message_count": 1, "route_source": "viewer_test"},
+        )
+        self.assertEqual(preview_forbidden.status_code, 403)
+        self.assertEqual(preview_forbidden.json()["code"], "authorization_error")
+
+        preview_allowed = client.post(
+            "/routing/preview",
+            headers=operator_headers,
+            json={"input": "测试路由预览", "message_count": 1, "route_source": "operator_test"},
+        )
+        self.assertEqual(preview_allowed.status_code, 200)
+        self.assertEqual(preview_allowed.json()["route_source"], "operator_test")
+
+        routing_update_forbidden = client.put(
+            "/config/runtime",
+            headers=viewer_headers,
+            json={
+                "config_scope": "routing",
+                "config_key": "default_route_name",
+                "config_value": "direct_chat",
+                "value_type": "str",
+                "description": "forbidden",
+                "updated_by": "viewer",
+            },
+        )
+        self.assertEqual(routing_update_forbidden.status_code, 403)
+        self.assertEqual(routing_update_forbidden.json()["code"], "authorization_error")
+
+        routing_update_allowed = client.put(
+            "/config/runtime",
+            headers=admin_headers,
+            json={
+                "config_scope": "routing",
+                "config_key": "default_route_name",
+                "config_value": "direct_chat",
+                "value_type": "str",
+                "description": "allowed",
+                "updated_by": "admin",
+            },
+        )
+        self.assertEqual(routing_update_allowed.status_code, 200)
+
+        for name in ["APP_AUTH_ENABLED", "APP_RBAC_ENABLED", "APP_API_KEYS", "APP_AUTH_ADMIN_SUBJECTS"]:
+            os.environ.pop(name, None)
+
+    def test_routing_config_events_endpoint_returns_routing_scope_audit(self) -> None:
+        os.environ["APP_AUTH_ENABLED"] = "true"
+        os.environ["APP_RBAC_ENABLED"] = "true"
+        os.environ["APP_API_KEYS"] = "demo-key,viewer-key"
+        os.environ["APP_AUTH_ADMIN_SUBJECTS"] = "apikey:demo-key"
+        from fastapi.testclient import TestClient
+
+        client = TestClient(create_app())
+        admin_headers = {"X-API-Key": "demo-key"}
+
+        client.put(
+            "/auth/subjects/apikey:viewer-k/roles",
+            headers=admin_headers,
+            json={"role_keys": ["viewer"], "updated_by": "admin-test"},
+        )
+
+        put_response = client.put(
+            "/config/runtime",
+            headers=admin_headers,
+            json={
+                "config_scope": "routing",
+                "config_key": "default_route_name",
+                "config_value": "direct_chat",
+                "value_type": "str",
+                "description": "routing audit test",
+                "updated_by": "admin",
+            },
+        )
+        self.assertEqual(put_response.status_code, 200)
+
+        events_response = client.get(
+            "/routing/config/events?key=default_route_name",
+            headers={"X-API-Key": "viewer-key"},
+        )
+        self.assertEqual(events_response.status_code, 200)
+        events = events_response.json()["events"]
+        self.assertGreaterEqual(len(events), 1)
+        self.assertTrue(all(item["config_scope"] == "routing" for item in events))
+        self.assertEqual(events[0]["config_key"], "default_route_name")
 
         for name in ["APP_AUTH_ENABLED", "APP_RBAC_ENABLED", "APP_API_KEYS", "APP_AUTH_ADMIN_SUBJECTS"]:
             os.environ.pop(name, None)
