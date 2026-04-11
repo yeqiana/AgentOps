@@ -14,6 +14,7 @@ SQLite Repository 实现。
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -28,6 +29,7 @@ from app.domain.models import (
     RouteDecisionRecord,
     RuntimeConfigRecord,
     RuntimeConfigEventRecord,
+    RoutingConfigVersionRecord,
     SessionRecord,
     TaskEventRecord,
     TaskRecord,
@@ -46,6 +48,7 @@ from app.infrastructure.persistence.database import (
     TABLE_BIZ_TOOL_RESULT,
     TABLE_SYS_RUNTIME_CONFIG,
     TABLE_SYS_RUNTIME_CONFIG_EVENT,
+    TABLE_SYS_ROUTING_CONFIG_VERSION,
     TABLE_SYS_REQUEST_TRACE,
     TABLE_SYS_USER,
     TABLE_SYS_WORKFLOW_ROLE,
@@ -358,6 +361,165 @@ class SQLiteRuntimeConfigRepository:
                 (scope, key),
             ).fetchone()
             return dict(row)
+
+    def create_routing_config_version(
+        self,
+        *,
+        snapshot: dict[str, object],
+        changed_key: str,
+        changed_value: str,
+        change_action: str,
+        updated_by: str,
+    ) -> RoutingConfigVersionRecord:
+        timestamp = _now_iso()
+        snapshot_json = json.dumps(snapshot, ensure_ascii=False, sort_keys=True)
+        with get_connection() as connection:
+            current = connection.execute(
+                f"SELECT COALESCE(MAX(version_no), 0) AS max_version FROM {TABLE_SYS_ROUTING_CONFIG_VERSION}"
+            ).fetchone()
+            version_no = int(current["max_version"]) + 1
+            version_id = f"routing_config_version_{uuid.uuid4().hex}"
+            connection.execute(
+                f"""
+                INSERT INTO {TABLE_SYS_ROUTING_CONFIG_VERSION} (
+                    id, version_no, snapshot_json, changed_key, changed_value, change_action,
+                    created_by, updated_by, created_at, updated_at,
+                    ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    version_id,
+                    version_no,
+                    snapshot_json,
+                    changed_key,
+                    changed_value,
+                    change_action,
+                    updated_by,
+                    updated_by,
+                    timestamp,
+                    timestamp,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                ),
+            )
+            row = connection.execute(
+                f"""
+                SELECT id, version_no, snapshot_json, changed_key, changed_value, change_action,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_ROUTING_CONFIG_VERSION}
+                WHERE id = ?
+                """,
+                (version_id,),
+            ).fetchone()
+            return dict(row)
+
+    def get_latest_routing_config_version(self) -> RoutingConfigVersionRecord | None:
+        with get_connection() as connection:
+            row = connection.execute(
+                f"""
+                SELECT id, version_no, snapshot_json, changed_key, changed_value, change_action,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_ROUTING_CONFIG_VERSION}
+                ORDER BY version_no DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_routing_config_version(self, *, version_no: int) -> RoutingConfigVersionRecord | None:
+        with get_connection() as connection:
+            row = connection.execute(
+                f"""
+                SELECT id, version_no, snapshot_json, changed_key, changed_value, change_action,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_ROUTING_CONFIG_VERSION}
+                WHERE version_no = ?
+                LIMIT 1
+                """,
+                (version_no,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_routing_config_versions(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[RoutingConfigVersionRecord]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, version_no, snapshot_json, changed_key, changed_value, change_action,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_ROUTING_CONFIG_VERSION}
+                ORDER BY version_no DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def replace_scope_configs(
+        self,
+        *,
+        scope: str,
+        configs: list[dict[str, str]],
+        updated_by: str,
+        description: str,
+    ) -> list[RuntimeConfigRecord]:
+        timestamp = _now_iso()
+        with get_connection() as connection:
+            connection.execute(
+                f"DELETE FROM {TABLE_SYS_RUNTIME_CONFIG} WHERE config_scope = ?",
+                (scope,),
+            )
+            for item in configs:
+                connection.execute(
+                    f"""
+                    INSERT INTO {TABLE_SYS_RUNTIME_CONFIG} (
+                        id, config_scope, config_key, config_value, value_type, config_source, description,
+                        created_by, updated_by, created_at, updated_at,
+                        ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"runtime_config_{uuid.uuid4().hex}",
+                        scope,
+                        item["config_key"],
+                        item["config_value"],
+                        item["value_type"],
+                        "db_override",
+                        description,
+                        updated_by,
+                        updated_by,
+                        timestamp,
+                        timestamp,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                    ),
+                )
+            rows = connection.execute(
+                f"""
+                SELECT id, config_scope, config_key, config_value, value_type, config_source, description,
+                       created_by, updated_by, created_at, updated_at,
+                       ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
+                FROM {TABLE_SYS_RUNTIME_CONFIG}
+                WHERE config_scope = ?
+                ORDER BY config_key ASC
+                """,
+                (scope,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def list_config_events(
         self,
@@ -893,11 +1055,11 @@ class SQLiteTaskRepository:
                 f"""
                 INSERT INTO {TABLE_BIZ_TASK} (
                     id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
-                    route_reason, plan, debate_summary, arbitration_summary, answer,
+                    route_reason, route_source, plan, debate_summary, arbitration_summary, answer,
                     critic_summary, review_status, review_summary, tool_count,
                     error_message, created_by, updated_by, created_at, updated_at,
                     ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     session_id = excluded.session_id,
                     turn_id = excluded.turn_id,
@@ -908,6 +1070,7 @@ class SQLiteTaskRepository:
                     protocol_summary = excluded.protocol_summary,
                     route_name = excluded.route_name,
                     route_reason = excluded.route_reason,
+                    route_source = excluded.route_source,
                     plan = excluded.plan,
                     debate_summary = excluded.debate_summary,
                     arbitration_summary = excluded.arbitration_summary,
@@ -936,6 +1099,7 @@ class SQLiteTaskRepository:
                     task["protocol_summary"],
                     task["route_name"],
                     task["route_reason"],
+                    task["route_source"],
                     task["plan"],
                     task["debate_summary"],
                     task["arbitration_summary"],
@@ -962,7 +1126,7 @@ class SQLiteTaskRepository:
             row = connection.execute(
                 f"""
                 SELECT id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
-                       route_reason, plan, debate_summary, arbitration_summary, answer,
+                       route_reason, route_source, plan, debate_summary, arbitration_summary, answer,
                        critic_summary, review_status, review_summary, tool_count, error_message,
                        created_by, updated_by, created_at, updated_at,
                        ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
@@ -993,7 +1157,7 @@ class SQLiteTaskRepository:
             row = connection.execute(
                 f"""
                 SELECT id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
-                       route_reason, plan, debate_summary, arbitration_summary, answer,
+                       route_reason, route_source, plan, debate_summary, arbitration_summary, answer,
                        critic_summary, review_status, review_summary, tool_count, error_message,
                        created_by, updated_by, created_at, updated_at,
                        ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
@@ -1009,7 +1173,7 @@ class SQLiteTaskRepository:
             rows = connection.execute(
                 f"""
                 SELECT id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
-                       route_reason, plan, debate_summary, arbitration_summary, answer,
+                       route_reason, route_source, plan, debate_summary, arbitration_summary, answer,
                        critic_summary, review_status, review_summary, tool_count, error_message,
                        created_by, updated_by, created_at, updated_at,
                        ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
@@ -1033,7 +1197,7 @@ class SQLiteTaskRepository:
     ) -> list[TaskRecord]:
         query = f"""
             SELECT id, session_id, turn_id, trace_id, status, user_input, execution_mode, protocol_summary, route_name,
-                   route_reason, plan, debate_summary, arbitration_summary, answer,
+                   route_reason, route_source, plan, debate_summary, arbitration_summary, answer,
                    critic_summary, review_status, review_summary, tool_count, error_message,
                    created_by, updated_by, created_at, updated_at,
                    ext_data1, ext_data2, ext_data3, ext_data4, ext_data5
@@ -1484,3 +1648,176 @@ class SQLiteTraceRepository:
             }
             for row in rows
         ]
+
+    def list_console_traces(
+        self,
+        *,
+        trace_id: str | None = None,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        path: str | None = None,
+        method: str | None = None,
+        status_code: int | None = None,
+        route_name: str | None = None,
+        started_from: str | None = None,
+        started_to: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        query = f"""
+            SELECT
+                trace.trace_id,
+                trace.request_id,
+                trace.method,
+                trace.path,
+                trace.status_code,
+                trace.error_code,
+                trace.rate_limited,
+                trace.started_at,
+                trace.updated_at,
+                trace.session_id,
+                trace.turn_id,
+                trace.task_id,
+                COALESCE(task.route_name, '') AS route_name,
+                COALESCE(task.route_source, '') AS route_source,
+                COALESCE(task.execution_mode, '') AS execution_mode,
+                COALESCE(task.review_status, '') AS review_status,
+                COALESCE(alerts.alert_count, 0) AS alert_count,
+                MAX(
+                    trace.updated_at,
+                    COALESCE(task.updated_at, ''),
+                    COALESCE(task_events.last_event_at, ''),
+                    COALESCE(tool_results.last_event_at, ''),
+                    COALESCE(route_decisions.last_event_at, ''),
+                    COALESCE(alerts.last_event_at, ''),
+                    trace.started_at
+                ) AS last_event_at
+            FROM {TABLE_SYS_REQUEST_TRACE} AS trace
+            LEFT JOIN {TABLE_BIZ_TASK} AS task
+                ON task.id = trace.task_id
+            LEFT JOIN (
+                SELECT trace_id, COUNT(*) AS alert_count, MAX(created_at) AS last_event_at
+                FROM {TABLE_SYS_ALERT_EVENT}
+                GROUP BY trace_id
+            ) AS alerts
+                ON alerts.trace_id = trace.trace_id
+            LEFT JOIN (
+                SELECT trace_id, MAX(created_at) AS last_event_at
+                FROM {TABLE_BIZ_TASK_EVENT}
+                GROUP BY trace_id
+            ) AS task_events
+                ON task_events.trace_id = trace.trace_id
+            LEFT JOIN (
+                SELECT trace_id, MAX(created_at) AS last_event_at
+                FROM {TABLE_BIZ_TOOL_RESULT}
+                GROUP BY trace_id
+            ) AS tool_results
+                ON tool_results.trace_id = trace.trace_id
+            LEFT JOIN (
+                SELECT trace_id, MAX(created_at) AS last_event_at
+                FROM {TABLE_BIZ_ROUTE_DECISION}
+                GROUP BY trace_id
+            ) AS route_decisions
+                ON route_decisions.trace_id = trace.trace_id
+        """
+        clauses: list[str] = []
+        parameters: list[object] = []
+        if trace_id:
+            clauses.append("trace.trace_id = ?")
+            parameters.append(trace_id)
+        if task_id:
+            clauses.append("trace.task_id = ?")
+            parameters.append(task_id)
+        if session_id:
+            clauses.append("trace.session_id = ?")
+            parameters.append(session_id)
+        if path:
+            clauses.append("trace.path = ?")
+            parameters.append(path)
+        if method:
+            clauses.append("trace.method = ?")
+            parameters.append(method)
+        if status_code is not None:
+            clauses.append("trace.status_code = ?")
+            parameters.append(status_code)
+        if route_name:
+            clauses.append("task.route_name = ?")
+            parameters.append(route_name)
+        if started_from:
+            clauses.append("trace.started_at >= ?")
+            parameters.append(started_from)
+        if started_to:
+            clauses.append("trace.started_at <= ?")
+            parameters.append(started_to)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += """
+            ORDER BY trace.started_at DESC, trace.trace_id DESC
+            LIMIT ? OFFSET ?
+        """
+        parameters.extend([limit, offset])
+        with get_connection() as connection:
+            rows = connection.execute(query, tuple(parameters)).fetchall()
+        return [
+            {
+                **dict(row),
+                "rate_limited": bool(row["rate_limited"]),
+                "alert_count": row["alert_count"] or 0,
+                "last_event_at": row["last_event_at"] or "",
+            }
+            for row in rows
+        ]
+
+    def count_console_traces(
+        self,
+        *,
+        trace_id: str | None = None,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        path: str | None = None,
+        method: str | None = None,
+        status_code: int | None = None,
+        route_name: str | None = None,
+        started_from: str | None = None,
+        started_to: str | None = None,
+    ) -> int:
+        query = f"""
+            SELECT COUNT(*) AS total
+            FROM {TABLE_SYS_REQUEST_TRACE} AS trace
+            LEFT JOIN {TABLE_BIZ_TASK} AS task
+                ON task.id = trace.task_id
+        """
+        clauses: list[str] = []
+        parameters: list[object] = []
+        if trace_id:
+            clauses.append("trace.trace_id = ?")
+            parameters.append(trace_id)
+        if task_id:
+            clauses.append("trace.task_id = ?")
+            parameters.append(task_id)
+        if session_id:
+            clauses.append("trace.session_id = ?")
+            parameters.append(session_id)
+        if path:
+            clauses.append("trace.path = ?")
+            parameters.append(path)
+        if method:
+            clauses.append("trace.method = ?")
+            parameters.append(method)
+        if status_code is not None:
+            clauses.append("trace.status_code = ?")
+            parameters.append(status_code)
+        if route_name:
+            clauses.append("task.route_name = ?")
+            parameters.append(route_name)
+        if started_from:
+            clauses.append("trace.started_at >= ?")
+            parameters.append(started_from)
+        if started_to:
+            clauses.append("trace.started_at <= ?")
+            parameters.append(started_to)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        with get_connection() as connection:
+            row = connection.execute(query, tuple(parameters)).fetchone()
+        return int(row["total"]) if row else 0

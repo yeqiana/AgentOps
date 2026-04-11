@@ -29,13 +29,14 @@ from app.domain.errors import PersistenceError
 
 
 DEFAULT_DATABASE_URL = "sqlite:///data/agent.db"
-SCHEMA_VERSION = "2026_04_09_06"
+SCHEMA_VERSION = "2026_04_10_02"
 
 TABLE_SYS_SCHEMA_VERSION = "sys_schema_version"
 TABLE_SYS_USER = "sys_user"
 TABLE_SYS_REQUEST_TRACE = "sys_request_trace"
 TABLE_SYS_RUNTIME_CONFIG = "sys_runtime_config"
 TABLE_SYS_RUNTIME_CONFIG_EVENT = "sys_runtime_config_event"
+TABLE_SYS_ROUTING_CONFIG_VERSION = "sys_routing_config_version"
 TABLE_SYS_WORKFLOW_ROLE = "sys_workflow_role"
 TABLE_SYS_ALERT_EVENT = "sys_alert_event"
 TABLE_SYS_AUTH_ROLE = "sys_auth_role"
@@ -102,6 +103,17 @@ SCHEMA_STATEMENTS = (
         new_value TEXT NOT NULL,
         value_type TEXT NOT NULL,
         description TEXT NOT NULL,
+{AUDIT_FIELD_SQL}
+    )
+    """,
+    f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_SYS_ROUTING_CONFIG_VERSION} (
+        id TEXT PRIMARY KEY,
+        version_no INTEGER NOT NULL UNIQUE,
+        snapshot_json TEXT NOT NULL,
+        changed_key TEXT NOT NULL,
+        changed_value TEXT NOT NULL,
+        change_action TEXT NOT NULL,
 {AUDIT_FIELD_SQL}
     )
     """,
@@ -216,6 +228,7 @@ SCHEMA_STATEMENTS = (
         protocol_summary TEXT NOT NULL DEFAULT '',
         route_name TEXT NOT NULL DEFAULT '',
         route_reason TEXT NOT NULL DEFAULT '',
+        route_source TEXT NOT NULL DEFAULT '',
         plan TEXT NOT NULL,
         debate_summary TEXT NOT NULL DEFAULT '',
         arbitration_summary TEXT NOT NULL DEFAULT '',
@@ -296,6 +309,8 @@ INDEX_STATEMENTS = (
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_RUNTIME_CONFIG}_updated_at ON {TABLE_SYS_RUNTIME_CONFIG}(updated_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_RUNTIME_CONFIG_EVENT}_scope_key_created ON {TABLE_SYS_RUNTIME_CONFIG_EVENT}(config_scope, config_key, created_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_RUNTIME_CONFIG_EVENT}_created_at ON {TABLE_SYS_RUNTIME_CONFIG_EVENT}(created_at DESC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ROUTING_CONFIG_VERSION}_version_no ON {TABLE_SYS_ROUTING_CONFIG_VERSION}(version_no DESC)",
+    f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ROUTING_CONFIG_VERSION}_created_at ON {TABLE_SYS_ROUTING_CONFIG_VERSION}(created_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_WORKFLOW_ROLE}_enabled_order ON {TABLE_SYS_WORKFLOW_ROLE}(is_enabled, sort_order ASC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ALERT_EVENT}_severity_created ON {TABLE_SYS_ALERT_EVENT}(severity, created_at DESC)",
     f"CREATE INDEX IF NOT EXISTS idx_{TABLE_SYS_ALERT_EVENT}_trace_created ON {TABLE_SYS_ALERT_EVENT}(trace_id, created_at DESC)",
@@ -380,6 +395,17 @@ AUDIT_COLUMN_MIGRATIONS = {
         ("ext_data3", f"ALTER TABLE {TABLE_SYS_RUNTIME_CONFIG_EVENT} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
         ("ext_data4", f"ALTER TABLE {TABLE_SYS_RUNTIME_CONFIG_EVENT} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
         ("ext_data5", f"ALTER TABLE {TABLE_SYS_RUNTIME_CONFIG_EVENT} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
+    ),
+    TABLE_SYS_ROUTING_CONFIG_VERSION: (
+        ("created_by", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("updated_by", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN updated_by TEXT NOT NULL DEFAULT 'system_migration'"),
+        ("created_at", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"),
+        ("updated_at", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
+        ("ext_data1", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data2", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data3", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data4", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN ext_data4 TEXT NOT NULL DEFAULT ''"),
+        ("ext_data5", f"ALTER TABLE {TABLE_SYS_ROUTING_CONFIG_VERSION} ADD COLUMN ext_data5 TEXT NOT NULL DEFAULT ''"),
     ),
     TABLE_SYS_WORKFLOW_ROLE: (
         ("created_by", f"ALTER TABLE {TABLE_SYS_WORKFLOW_ROLE} ADD COLUMN created_by TEXT NOT NULL DEFAULT 'system_migration'"),
@@ -487,6 +513,7 @@ AUDIT_COLUMN_MIGRATIONS = {
         ("updated_at", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
         ("execution_mode", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN execution_mode TEXT NOT NULL DEFAULT ''"),
         ("protocol_summary", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN protocol_summary TEXT NOT NULL DEFAULT ''"),
+        ("route_source", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN route_source TEXT NOT NULL DEFAULT ''"),
         ("ext_data1", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data1 TEXT NOT NULL DEFAULT ''"),
         ("ext_data2", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data2 TEXT NOT NULL DEFAULT ''"),
         ("ext_data3", f"ALTER TABLE {TABLE_BIZ_TASK} ADD COLUMN ext_data3 TEXT NOT NULL DEFAULT ''"),
@@ -679,7 +706,7 @@ def _migrate_legacy_tables(connection: sqlite3.Connection) -> None:
         target_table=TABLE_BIZ_TASK,
         target_columns=(
             "id", "session_id", "turn_id", "trace_id", "status", "user_input", "route_name",
-            "execution_mode", "protocol_summary", "route_reason", "plan", "debate_summary", "arbitration_summary", "answer",
+            "execution_mode", "protocol_summary", "route_reason", "route_source", "plan", "debate_summary", "arbitration_summary", "answer",
             "critic_summary", "review_status", "review_summary", "tool_count", "error_message",
             "created_by", "updated_by", "created_at", "updated_at",
             "ext_data1", "ext_data2", "ext_data3", "ext_data4", "ext_data5",
@@ -693,6 +720,7 @@ def _migrate_legacy_tables(connection: sqlite3.Connection) -> None:
         computed_values={
             "execution_mode": empty_text,
             "protocol_summary": empty_text,
+            "route_source": empty_text,
             "created_by": migration_actor,
             "updated_by": migration_actor,
             "ext_data1": empty_text,
@@ -793,7 +821,7 @@ def _upsert_schema_version(connection: sqlite3.Connection) -> None:
         """,
         (
             SCHEMA_VERSION,
-            "Add stage-2 task event persistence support.",
+            "Add routing config version snapshots.",
         ),
     )
 
@@ -945,6 +973,9 @@ def _seed_default_auth_model(connection: sqlite3.Connection) -> None:
         ("auth_role_admin", "admin", "管理角色", "允许修改运行时配置、角色配置和主体授权。", 1),
     )
     permissions = (
+        ("auth_perm_routing_read", "routing.read", "Routing Read", "Allows querying route decisions, stats, and routing snapshots."),
+        ("auth_perm_routing_preview", "routing.preview", "Routing Preview", "Allows previewing which route a request would hit."),
+        ("auth_perm_routing_manage", "routing.manage", "Routing Manage", "Allows updating runtime configuration under the routing scope."),
         ("auth_perm_chat_execute", "chat.execute", "执行对话", "允许发起聊天与流式对话。"),
         ("auth_perm_asset_analyze", "asset.analyze", "分析资产", "允许执行资产分析。"),
         ("auth_perm_asset_upload", "asset.upload", "上传资产", "允许上传文件并写入资产记录。"),
@@ -963,6 +994,7 @@ def _seed_default_auth_model(connection: sqlite3.Connection) -> None:
         ("auth_perm_auth_role_assign", "auth.role.assign", "分配主体角色", "允许给主体分配角色。"),
     )
     role_permissions = (
+        ("viewer", "routing.read"),
         ("viewer", "session.read"),
         ("viewer", "task.read"),
         ("viewer", "trace.read"),
@@ -971,6 +1003,8 @@ def _seed_default_auth_model(connection: sqlite3.Connection) -> None:
         ("viewer", "workflow.read"),
         ("viewer", "config.read"),
         ("viewer", "auth.read"),
+        ("operator", "routing.read"),
+        ("operator", "routing.preview"),
         ("operator", "chat.execute"),
         ("operator", "asset.analyze"),
         ("operator", "asset.upload"),
@@ -984,6 +1018,9 @@ def _seed_default_auth_model(connection: sqlite3.Connection) -> None:
         ("operator", "workflow.read"),
         ("operator", "config.read"),
         ("operator", "auth.read"),
+        ("admin", "routing.read"),
+        ("admin", "routing.preview"),
+        ("admin", "routing.manage"),
         ("admin", "chat.execute"),
         ("admin", "asset.analyze"),
         ("admin", "asset.upload"),

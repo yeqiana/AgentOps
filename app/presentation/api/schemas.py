@@ -150,6 +150,7 @@ class TaskPayload(BaseModel):
     protocol_summary: str
     route_name: str
     route_reason: str
+    route_source: str
     plan: str
     debate_summary: str
     arbitration_summary: str
@@ -245,6 +246,7 @@ class RoutingConfigPayload(BaseModel):
 
 
 class RoutingConfigResponse(BaseModel):
+    current_version: int | None = None
     routing: RoutingConfigPayload
 
 
@@ -257,6 +259,45 @@ class RoutingConfigTemplateItemPayload(BaseModel):
 
 class RoutingConfigTemplateResponse(BaseModel):
     templates: list[RoutingConfigTemplateItemPayload] = Field(default_factory=list)
+
+
+class RoutingConfigVersionPayload(BaseModel):
+    id: str
+    version_no: int
+    snapshot: RoutingConfigPayload
+    changed_key: str
+    changed_value: str
+    change_action: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+
+
+class RoutingConfigVersionListResponse(BaseModel):
+    versions: list[RoutingConfigVersionPayload] = Field(default_factory=list)
+
+
+class RoutingConfigRestoreRequest(BaseModel):
+    updated_by: str = Field(default="api-routing", description="本次回滚的操作人。")
+
+
+class RoutingConfigRestoreResponse(BaseModel):
+    restored_from_version: int
+    current_version: int | None = None
+    routing: RoutingConfigPayload
+
+
+class RoutingConfigDiffItemPayload(BaseModel):
+    field_path: str
+    before_value: str
+    after_value: str
+
+
+class RoutingConfigDiffResponse(BaseModel):
+    from_version: int
+    to_version: int
+    diff_items: list[RoutingConfigDiffItemPayload] = Field(default_factory=list)
 
 
 class RoutingPreviewRequest(BaseModel):
@@ -466,6 +507,35 @@ class TraceGraphResponse(BaseModel):
     trace: TracePayload
     nodes: list[TraceGraphNodePayload] = Field(default_factory=list)
     edges: list[TraceGraphEdgePayload] = Field(default_factory=list)
+
+
+class ConsoleTraceListItemPayload(BaseModel):
+    trace_id: str
+    request_id: str
+    method: str
+    path: str
+    status_code: int
+    error_code: str = ""
+    rate_limited: bool = False
+    started_at: str
+    updated_at: str
+    session_id: str = ""
+    turn_id: str = ""
+    task_id: str = ""
+    route_name: str = ""
+    route_source: str = ""
+    execution_mode: str = ""
+    review_status: str = ""
+    alert_count: int = 0
+    last_event_at: str = ""
+
+
+class ConsoleTraceListResponse(BaseModel):
+    items: list[ConsoleTraceListItemPayload] = Field(default_factory=list)
+    page: int
+    page_size: int
+    total: int
+    has_next: bool
 
 
 class TraceConsoleViewerPayload(BaseModel):

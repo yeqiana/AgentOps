@@ -474,6 +474,37 @@ class WorkflowRoleRecord(TypedDict):
     ext_data5: str
 
 
+class RoutingConfigVersionRecord(TypedDict):
+    """
+    路由配置版本快照持久化记录。
+
+    这是什么：
+    - 数据库中的 routing 配置版本快照行结构。
+
+    做什么：
+    - 记录版本号、完整快照、触发变更的配置键和值。
+
+    为什么这么做：
+    - 单条配置事件只能看到增量修改，路由治理和问题回溯还需要可直接回放的整份策略快照。
+    """
+
+    id: str
+    version_no: int
+    snapshot_json: str
+    changed_key: str
+    changed_value: str
+    change_action: str
+    created_by: str
+    updated_by: str
+    created_at: str
+    updated_at: str
+    ext_data1: str
+    ext_data2: str
+    ext_data3: str
+    ext_data4: str
+    ext_data5: str
+
+
 class AlertEventRecord(TypedDict):
     """
     告警事件持久化记录。

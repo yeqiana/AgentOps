@@ -136,3 +136,57 @@ class TraceService:
             limit=limit,
             offset=offset,
         )
+
+    def list_console_traces(
+        self,
+        *,
+        trace_id: str | None = None,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        path: str | None = None,
+        method: str | None = None,
+        status_code: int | None = None,
+        route_name: str | None = None,
+        started_from: str | None = None,
+        started_to: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, object]]:
+        return self.repository.list_console_traces(
+            trace_id=trace_id,
+            task_id=task_id,
+            session_id=session_id,
+            path=path,
+            method=method,
+            status_code=status_code,
+            route_name=route_name,
+            started_from=started_from,
+            started_to=started_to,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_console_traces(
+        self,
+        *,
+        trace_id: str | None = None,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        path: str | None = None,
+        method: str | None = None,
+        status_code: int | None = None,
+        route_name: str | None = None,
+        started_from: str | None = None,
+        started_to: str | None = None,
+    ) -> int:
+        return self.repository.count_console_traces(
+            trace_id=trace_id,
+            task_id=task_id,
+            session_id=session_id,
+            path=path,
+            method=method,
+            status_code=status_code,
+            route_name=route_name,
+            started_from=started_from,
+            started_to=started_to,
+        )

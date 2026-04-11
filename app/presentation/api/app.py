@@ -1,4 +1,4 @@
-"""
+﻿"""
 FastAPI application factory.
 
 What this is:
@@ -26,6 +26,7 @@ from app.application.services.config_service import RuntimeConfigService
 from app.application.services.request_route_service import RequestRouteService
 from app.application.services.session_service import SessionService
 from app.application.services.task_service import TaskService
+from app.application.services.trace_console_service import TraceConsoleService
 from app.application.services.workflow_role_service import WorkflowRoleService
 from app.application.upload_service import create_uploaded_asset
 from app.config import (
@@ -71,6 +72,7 @@ from app.presentation.api.schemas import (
     AssetResponse,
     ChatRequest,
     ChatResponse,
+    ConsoleTraceListResponse,
     ErrorResponse,
     HealthResponse,
     RecoveryConfigPayload,
@@ -87,6 +89,12 @@ from app.presentation.api.schemas import (
     RuntimeConfigUpsertResponse,
     RoutingConfigPayload,
     RoutingConfigResponse,
+    RoutingConfigVersionListResponse,
+    RoutingConfigVersionPayload,
+    RoutingConfigRestoreRequest,
+    RoutingConfigRestoreResponse,
+    RoutingConfigDiffItemPayload,
+    RoutingConfigDiffResponse,
     RoutingPreviewRequest,
     RoutingPreviewResponse,
     RoutingConfigTemplateItemPayload,
@@ -123,12 +131,8 @@ from app.presentation.api.schemas import (
     TraceResponse,
     TraceStatsResponse,
     TraceStatPayload,
-    TraceGraphEdgePayload,
-    TraceGraphNodePayload,
     TraceGraphResponse,
-    TraceConsoleViewerPayload,
     TraceConsoleViewerResponse,
-    TraceTimelineEventPayload,
     TraceTimelineResponse,
     UploadAssetResponse,
     WorkflowConfigPayload,
@@ -146,233 +150,13 @@ from app.workflow.registry import build_workflow_policy_registry
 logger = get_logger("presentation.api")
 
 
-def _build_trace_timeline_events(
-    trace: dict[str, object],
-    task_bundle: dict[str, object] | None,
-    route_decisions: list[dict[str, object]],
-    task_events: list[dict[str, object]],
-    tool_results: list[dict[str, object]],
-    alerts: list[dict[str, object]],
-) -> list[TraceTimelineEventPayload]:
-    """
-    Build a single chronological trace timeline from already-persisted records.
-
-    What this is:
-    - A lightweight API-side event normalizer for trace visualization.
-
-    What it does:
-    - Merges trace, task, route, tool, and alert records into one sorted list.
-
-    Why this is done this way:
-    - Stage 3 needs timeline-style data, but stage 2 already persists enough
-      records to derive it without introducing a new table.
-    """
-    timeline: list[TraceTimelineEventPayload] = [
-        TraceTimelineEventPayload(
-            happened_at=str(trace["started_at"]),
-            event_type="request_started",
-            source_type="trace",
-            source_name=str(trace["method"]),
-            title=f'{trace["method"]} {trace["path"]}',
-            details=f'auth_subject={trace["auth_subject"]}, status_code={trace["status_code"]}',
-            trace_id=str(trace["trace_id"]),
-            task_id=str(trace["task_id"]),
-            session_id=str(trace["session_id"]),
-            turn_id=str(trace["turn_id"]),
-        )
-    ]
-    if task_bundle:
-        task = task_bundle["task"]
-        timeline.append(
-            TraceTimelineEventPayload(
-                happened_at=str(task["created_at"]),
-                event_type="task_recorded",
-                source_type="task",
-                source_name=str(task["status"]),
-                title=str(task["id"]),
-                details=f'route={task["route_name"]}, execution_mode={task["execution_mode"]}',
-                trace_id=str(task["trace_id"]),
-                task_id=str(task["id"]),
-                session_id=str(task["session_id"]),
-                turn_id=str(task["turn_id"]),
-            )
-        )
-    timeline.extend(
-        TraceTimelineEventPayload(
-            happened_at=str(item["created_at"]),
-            event_type=str(item["event_type"]),
-            source_type="task_event",
-            source_name=str(item["event_type"]),
-            title=str(item["event_message"]),
-            details=str(item["event_payload_json"]),
-            trace_id=str(item["trace_id"]),
-            task_id=str(item["task_id"]),
-            session_id=str(item["session_id"]),
-            turn_id=str(item["turn_id"]),
-        )
-        for item in task_events
-    )
-    timeline.extend(
-        TraceTimelineEventPayload(
-            happened_at=str(item["created_at"]),
-            event_type="route_decision",
-            source_type="route",
-            source_name=str(item["route_source"]),
-            title=str(item["route_name"]),
-            details=str(item["route_reason"]),
-            trace_id=str(item["trace_id"]),
-            task_id=str(item["task_id"]),
-            session_id=str(item["session_id"]),
-            turn_id=str(item["turn_id"]),
-        )
-        for item in route_decisions
-    )
-    timeline.extend(
-        TraceTimelineEventPayload(
-            happened_at=str(item["created_at"]),
-            event_type="tool_result",
-            source_type="tool",
-            source_name=str(item["tool_name"]),
-            title=f'{item["tool_name"]} success={item["success"]}',
-            details=f'exit_code={item["exit_code"]}',
-            trace_id=str(item["trace_id"]),
-            task_id=str(item["task_id"]),
-            session_id=str(item["session_id"]),
-            turn_id=str(item["turn_id"]),
-        )
-        for item in tool_results
-    )
-    timeline.extend(
-        TraceTimelineEventPayload(
-            happened_at=str(item["created_at"]),
-            event_type="alert",
-            source_type="alert",
-            source_name=str(item["source_type"]),
-            title=str(item["event_code"]),
-            details=str(item["message"]),
-            trace_id=str(item["trace_id"]),
-            task_id=str(trace["task_id"]),
-            session_id=str(trace["session_id"]),
-            turn_id=str(trace["turn_id"]),
-        )
-        for item in alerts
-    )
-    return sorted(timeline, key=lambda item: item.happened_at)
-
-
-def _build_trace_graph(
-    trace: dict[str, object],
-    task_bundle: dict[str, object] | None,
-    route_decisions: list[dict[str, object]],
-    tool_results: list[dict[str, object]],
-    alerts: list[dict[str, object]],
-) -> tuple[list[TraceGraphNodePayload], list[TraceGraphEdgePayload]]:
-    """
-    Build graph-style trace view data for future visualization UIs.
-
-    What this is:
-    - A normalized node/edge projection over already persisted trace data.
-
-    What it does:
-    - Emits graph nodes and relationships for trace, task, route, tool, and alert records.
-
-    Why this is done this way:
-    - Stage 3 visualization work should not need to reverse-engineer raw API payloads.
-      A simple graph projection keeps the server-side protocol stable and UI-friendly.
-    """
-    trace_node_id = f'trace:{trace["trace_id"]}'
-    nodes: list[TraceGraphNodePayload] = [
-        TraceGraphNodePayload(
-            node_id=trace_node_id,
-            node_type="trace",
-            title=f'{trace["method"]} {trace["path"]}',
-            subtitle=f'status={trace["status_code"]}',
-            happened_at=str(trace["started_at"]),
-        )
-    ]
-    edges: list[TraceGraphEdgePayload] = []
-
-    task_node_id = ""
-    if task_bundle:
-        task = task_bundle["task"]
-        task_node_id = f'task:{task["id"]}'
-        nodes.append(
-            TraceGraphNodePayload(
-                node_id=task_node_id,
-                node_type="task",
-                title=str(task["id"]),
-                subtitle=f'status={task["status"]}',
-                happened_at=str(task["created_at"]),
-            )
-        )
-        edges.append(TraceGraphEdgePayload(source_id=trace_node_id, target_id=task_node_id, edge_type="owns_task"))
-
-    for item in route_decisions:
-        route_node_id = f'route:{item["id"] or item["trace_id"] + ":" + item["route_name"]}'
-        nodes.append(
-            TraceGraphNodePayload(
-                node_id=route_node_id,
-                node_type="route",
-                title=str(item["route_name"]),
-                subtitle=str(item["route_source"]),
-                happened_at=str(item["created_at"]),
-            )
-        )
-        edges.append(
-            TraceGraphEdgePayload(
-                source_id=task_node_id or trace_node_id,
-                target_id=route_node_id,
-                edge_type="route_decision",
-            )
-        )
-
-    for item in tool_results:
-        tool_node_id = f'tool:{item["id"] or item["trace_id"] + ":" + item["tool_name"]}'
-        nodes.append(
-            TraceGraphNodePayload(
-                node_id=tool_node_id,
-                node_type="tool",
-                title=str(item["tool_name"]),
-                subtitle=f'success={item["success"]}',
-                happened_at=str(item["created_at"]),
-            )
-        )
-        edges.append(
-            TraceGraphEdgePayload(
-                source_id=task_node_id or trace_node_id,
-                target_id=tool_node_id,
-                edge_type="tool_execution",
-            )
-        )
-
-    for item in alerts:
-        alert_node_id = f'alert:{item["id"]}'
-        nodes.append(
-            TraceGraphNodePayload(
-                node_id=alert_node_id,
-                node_type="alert",
-                title=str(item["event_code"]),
-                subtitle=str(item["severity"]),
-                happened_at=str(item["created_at"]),
-            )
-        )
-        edges.append(
-            TraceGraphEdgePayload(
-                source_id=trace_node_id,
-                target_id=alert_node_id,
-                edge_type="alert",
-            )
-        )
-    return nodes, edges
-
-
 def create_app():
     try:
         from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
         from fastapi.responses import JSONResponse, StreamingResponse
     except ImportError as error:
         raise RuntimeError(
-            "未安装 fastapi。请先安装 `fastapi`、`uvicorn` 和 `python-multipart` 后再启动 API。"
+            "fastapi is not installed. Install `fastapi`, `uvicorn`, and `python-multipart` first."
         ) from error
 
     session_service = SessionService()
@@ -384,6 +168,11 @@ def create_app():
     chat_service = ChatService()
     auth_service = AuthService()
     trace_service = TraceService()
+    trace_console_service = TraceConsoleService(
+        trace_service=trace_service,
+        session_service=session_service,
+        alert_service=alert_service,
+    )
     request_route_service = RequestRouteService()
     graph = build_graph()
     app = FastAPI(title="Agent Base Runtime API", version="0.7.0")
@@ -434,6 +223,18 @@ def create_app():
 
     def current_tool_registry():
         return build_default_tool_registry(config_service)
+
+    def build_routing_payload(snapshot: dict[str, object]) -> RoutingConfigPayload:
+        return RoutingConfigPayload(
+            image_route=RoutingRulePayload(**snapshot["image_route"]),
+            audio_route=RoutingRulePayload(**snapshot["audio_route"]),
+            video_route=RoutingRulePayload(**snapshot["video_route"]),
+            file_route=RoutingRulePayload(**snapshot["file_route"]),
+            tool_augmented_route=RoutingRulePayload(**snapshot["tool_augmented_route"]),
+            deliberation_route=RoutingDecisionRulePayload(**snapshot["deliberation_route"]),
+            contextual_route=RoutingDecisionRulePayload(**snapshot["contextual_route"]),
+            default_route=RoutingRulePayload(**snapshot["default_route"]),
+        )
 
     def prepare_async_state(
         *,
@@ -621,7 +422,7 @@ def create_app():
         user_name = sanitize_text(payload.user_name) or "api-user"
         session_title = sanitize_text(payload.session_title) or "API Session"
         if not user_input:
-            raise ValidationError("message 不能为空。")
+            raise ValidationError("message must not be empty.")
 
         current_state = None
         try:
@@ -681,7 +482,7 @@ def create_app():
             persist_failed_task_if_possible(current_state, error)
             raise error
         except Exception as error:
-            logger.exception("API /chat 发生未预期异常")
+            logger.exception("API /chat unexpected failure")
             unexpected = AgentError(
                 "system",
                 "unexpected_error",
@@ -699,14 +500,14 @@ def create_app():
     def submit_task(payload: AsyncTaskSubmitRequest, request: Request) -> AsyncTaskSubmitResponse:
         require_permission(request, "task.submit")
         if not is_async_task_enabled():
-            raise ValidationError("????????????????")
+            raise ValidationError("session_id must not be empty.")
 
         user_input = sanitize_text(payload.message)
         session_id = sanitize_text(payload.session_id or "")
         user_name = sanitize_text(payload.user_name) or "api-user"
         session_title = sanitize_text(payload.session_title) or "Async Task Session"
         if not user_input:
-            raise ValidationError("message ?????")
+            raise ValidationError("message must not be empty.")
 
         current_state = prepare_async_state(
             user_input=user_input,
@@ -739,7 +540,7 @@ def create_app():
     def retry_task(task_id: str, request: Request) -> AsyncTaskSubmitResponse:
         require_permission(request, "task.submit")
         if not is_async_task_enabled():
-            raise ValidationError("????????????????")
+            raise ValidationError("session_id must not be empty.")
 
         retried = async_task_service.retry_turn(
             sanitize_text(task_id),
@@ -780,7 +581,7 @@ def create_app():
         user_name = sanitize_text(payload.user_name) or "api-user"
         session_title = sanitize_text(payload.session_title) or "API Session"
         if not user_input:
-            raise ValidationError("message 不能为空。")
+            raise ValidationError("message must not be empty.")
 
         normalized_user_input, input_assets = parse_input_assets(user_input)
         task_service.tool_registry = current_tool_registry()
@@ -855,7 +656,7 @@ def create_app():
                 persist_failed_task_if_possible(current_state, error)
                 yield encode_event("error", build_error_response(error).model_dump())
             except Exception as error:
-                logger.exception("API /chat/stream 发生未预期异常")
+                logger.exception("API /chat/stream unexpected failure")
                 unexpected = AgentError(
                     "system",
                     "unexpected_error",
@@ -880,7 +681,7 @@ def create_app():
         require_permission(request, "session.read")
         bundle = session_service.get_session_bundle(session_id)
         if not bundle["session"]:
-            raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Session not found.").to_dict())
         return SessionResponse(**bundle)
 
     @app.get("/sessions/{session_id}/summary", response_model=SessionSummaryResponse, responses={404: {"model": ErrorResponse}})
@@ -889,7 +690,7 @@ def create_app():
         normalized_session_id = sanitize_text(session_id)
         bundle = session_service.get_session_bundle(normalized_session_id)
         if not bundle["session"]:
-            raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Session not found.").to_dict())
         tasks = session_service.list_tasks_by_session(
             normalized_session_id,
             limit=max(1, min(task_limit, 100)),
@@ -909,7 +710,7 @@ def create_app():
         require_permission(request, "session.read")
         bundle = session_service.get_session_bundle(session_id)
         if not bundle["session"]:
-            raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Session not found.").to_dict())
         return AssetListResponse(assets=[AssetPayload(**asset) for asset in bundle["assets"]])
 
     @app.get("/assets/{asset_id}", response_model=AssetResponse, responses={404: {"model": ErrorResponse}})
@@ -917,7 +718,7 @@ def create_app():
         require_permission(request, "session.read")
         asset = session_service.get_asset(asset_id)
         if not asset:
-            raise HTTPException(status_code=404, detail=ValidationError("资产不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Asset not found.").to_dict())
         return AssetResponse(asset=AssetPayload(**asset))
 
     @app.get("/tools", response_model=ToolListResponse)
@@ -999,7 +800,7 @@ def create_app():
         require_permission(request, "workflow_role.write")
         normalized_role_key = sanitize_text(role_key)
         if not normalized_role_key:
-            raise ValidationError("role_key 不能为空。")
+            raise ValidationError("role_key must not be empty.")
         role = workflow_role_service.upsert_role(
             role_key=normalized_role_key,
             role_name=sanitize_text(payload.name),
@@ -1050,73 +851,114 @@ def create_app():
 
     @app.get("/routing/config", response_model=RoutingConfigResponse)
     def get_routing_config(request: Request) -> RoutingConfigResponse:
-        require_permission(request, "config.read")
-        effective_routing = config_service.get_effective_routing_config()
+        require_permission(request, "routing.read")
+        snapshot = config_service.get_routing_config_snapshot()
+        latest_version = config_service.get_latest_routing_config_version()
         return RoutingConfigResponse(
-            routing=RoutingConfigPayload(
-                image_route=RoutingRulePayload(
-                    route_name=effective_routing["image_route_name"],
-                    route_reason=effective_routing["image_route_reason"],
-                ),
-                audio_route=RoutingRulePayload(
-                    route_name=effective_routing["audio_route_name"],
-                    route_reason=effective_routing["audio_route_reason"],
-                ),
-                video_route=RoutingRulePayload(
-                    route_name=effective_routing["video_route_name"],
-                    route_reason=effective_routing["video_route_reason"],
-                ),
-                file_route=RoutingRulePayload(
-                    route_name=effective_routing["file_route_name"],
-                    route_reason=effective_routing["file_route_reason"],
-                ),
-                tool_augmented_route=RoutingRulePayload(
-                    route_name=effective_routing["tool_augmented_route_name"],
-                    route_reason=effective_routing["tool_augmented_route_reason"],
-                ),
-                deliberation_route=RoutingDecisionRulePayload(
-                    route_name=effective_routing["deliberation_route_name"],
-                    route_reason=effective_routing["deliberation_route_reason"],
-                    enabled=effective_routing["deliberation_enabled"],
-                    keywords=effective_routing["deliberation_keywords"],
-                    message_threshold=0,
-                ),
-                contextual_route=RoutingDecisionRulePayload(
-                    route_name=effective_routing["contextual_route_name"],
-                    route_reason=effective_routing["contextual_route_reason"],
-                    enabled=effective_routing["contextual_message_threshold"] > 0,
-                    keywords=[],
-                    message_threshold=effective_routing["contextual_message_threshold"],
-                ),
-                default_route=RoutingRulePayload(
-                    route_name=effective_routing["default_route_name"],
-                    route_reason=effective_routing["default_route_reason"],
-                ),
-            )
+            current_version=latest_version["version_no"] if latest_version else None,
+            routing=build_routing_payload(snapshot),
         )
 
     @app.get("/routing/config/template", response_model=RoutingConfigTemplateResponse)
     def get_routing_config_template(request: Request) -> RoutingConfigTemplateResponse:
-        require_permission(request, "config.read")
-        definitions = config_service.get_routing_config_template()
+        require_permission(request, "routing.read")
         return RoutingConfigTemplateResponse(
             templates=[
                 RoutingConfigTemplateItemPayload(
-                    config_key=key,
+                    **item,
+                )
+                for item in config_service.list_routing_config_template_items()
+            ]
+        )
+
+    @app.get("/routing/config/events", response_model=RuntimeConfigEventListResponse)
+    def list_routing_config_events(
+        request: Request,
+        key: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> RuntimeConfigEventListResponse:
+        require_permission(request, "routing.read")
+        events = config_service.list_config_events(
+            scope="routing",
+            key=sanitize_text(key or "") or None,
+            limit=max(1, min(limit, 200)),
+            offset=max(0, offset),
+        )
+        return RuntimeConfigEventListResponse(
+            events=[
+                RuntimeConfigEventPayload(
+                    id=item["id"],
+                    config_scope=item["config_scope"],
+                    config_key=item["config_key"],
+                    action_type=item["action_type"],
+                    old_value=item["old_value"],
+                    new_value=item["new_value"],
                     value_type=item["value_type"],
                     description=item["description"],
-                    example_value=item["example_value"],
+                    created_by=item["created_by"],
+                    updated_by=item["updated_by"],
+                    created_at=item["created_at"],
+                    updated_at=item["updated_at"],
                 )
-                for key, item in definitions.items()
+                for item in events
             ]
+        )
+
+    @app.get("/routing/config/versions", response_model=RoutingConfigVersionListResponse)
+    def list_routing_config_versions(
+        request: Request,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> RoutingConfigVersionListResponse:
+        require_permission(request, "routing.read")
+        versions = config_service.list_routing_config_versions(
+            limit=max(1, min(limit, 100)),
+            offset=max(0, offset),
+        )
+        return RoutingConfigVersionListResponse(
+            versions=[
+                RoutingConfigVersionPayload(
+                    id=item["id"],
+                    version_no=item["version_no"],
+                    snapshot=build_routing_payload(item["snapshot"]),
+                    changed_key=item["changed_key"],
+                    changed_value=item["changed_value"],
+                    change_action=item["change_action"],
+                    created_by=item["created_by"],
+                    updated_by=item["updated_by"],
+                    created_at=item["created_at"],
+                    updated_at=item["updated_at"],
+                )
+                for item in versions
+            ]
+        )
+
+    @app.post("/routing/config/versions/{version_no}/restore", response_model=RoutingConfigRestoreResponse, responses={404: {"model": ErrorResponse}})
+    def restore_routing_config_version(
+        version_no: int,
+        payload: RoutingConfigRestoreRequest,
+        request: Request,
+    ) -> RoutingConfigRestoreResponse:
+        require_permission(request, "routing.manage")
+        restored = config_service.restore_routing_config_version(
+            version_no=max(1, version_no),
+            updated_by=sanitize_text(payload.updated_by) or "api-routing",
+        )
+        refreshed_tool_registry = build_default_tool_registry(config_service)
+        task_service.tool_registry = refreshed_tool_registry
+        return RoutingConfigRestoreResponse(
+            restored_from_version=restored["restored_from_version"],
+            current_version=restored["current_version"],
+            routing=build_routing_payload(restored["snapshot"]),
         )
 
     @app.post("/routing/preview", response_model=RoutingPreviewResponse, responses={400: {"model": ErrorResponse}})
     def preview_routing(payload: RoutingPreviewRequest, request: Request) -> RoutingPreviewResponse:
-        require_permission(request, "task.read")
+        require_permission(request, "routing.preview")
         raw_input = sanitize_text(payload.input)
         if not raw_input:
-            raise ValidationError("input 不能为空。")
+            raise ValidationError("input must not be empty.")
         normalized_user_input, input_assets = parse_input_assets(raw_input)
         route_decision = request_route_service.decide(
             user_input=normalized_user_input,
@@ -1165,7 +1007,7 @@ def create_app():
         offset: int = 0,
     ) -> RuntimeConfigEventListResponse:
         require_permission(request, "config.read")
-        events = config_service.repository.list_config_events(
+        events = config_service.list_config_events(
             scope=sanitize_text(scope or "") or None,
             key=sanitize_text(key or "") or None,
             limit=max(1, min(limit, 200)),
@@ -1193,17 +1035,21 @@ def create_app():
 
     @app.put("/config/runtime", response_model=RuntimeConfigUpsertResponse, responses={400: {"model": ErrorResponse}})
     def upsert_runtime_config(payload: RuntimeConfigUpsertRequest, request: Request) -> RuntimeConfigUpsertResponse:
-        require_permission(request, "config.write")
+        normalized_scope = sanitize_text(payload.config_scope)
+        if normalized_scope == "routing":
+            require_permission(request, "routing.manage")
+        else:
+            require_permission(request, "config.write")
         if not payload.config_scope or not payload.config_key:
-            raise ValidationError("config_scope 和 config_key 不能为空。")
+            raise ValidationError("config_scope and config_key must not be empty.")
         config_service.validate_config_entry(
-            scope=sanitize_text(payload.config_scope),
+            scope=normalized_scope,
             key=sanitize_text(payload.config_key),
             value=sanitize_text(payload.config_value),
             value_type=sanitize_text(payload.value_type),
         )
         item = config_service.upsert_config(
-            scope=sanitize_text(payload.config_scope),
+            scope=normalized_scope,
             key=sanitize_text(payload.config_key),
             value=sanitize_text(payload.config_value),
             value_type=sanitize_text(payload.value_type),
@@ -1233,7 +1079,7 @@ def create_app():
         require_permission(request, "tool.execute")
         normalized_tool_name = sanitize_text(tool_name)
         if not normalized_tool_name:
-            raise ValidationError("tool_name 不能为空。")
+            raise ValidationError("tool_name must not be empty.")
         trace_id = sanitize_text(payload.trace_id or "") or request.state.trace_id
         result = current_tool_registry().execute(normalized_tool_name, trace_id, payload.parameters)
         return ToolExecuteResponse(result=result)
@@ -1331,7 +1177,7 @@ def create_app():
         require_permission(request, "task.read")
         bundle = session_service.get_session_bundle(session_id)
         if not bundle["session"]:
-            raise HTTPException(status_code=404, detail=ValidationError("会话不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Session not found.").to_dict())
         normalized_limit = max(1, min(limit, 100))
         normalized_offset = max(0, offset)
         tasks = session_service.list_tasks_by_session(session_id, limit=normalized_limit, offset=normalized_offset)
@@ -1342,7 +1188,7 @@ def create_app():
         require_permission(request, "task.read")
         task = session_service.get_task(task_id)
         if not task:
-            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Task not found.").to_dict())
         return TaskResponse(**task)
 
 
@@ -1352,7 +1198,7 @@ def create_app():
         normalized_task_id = sanitize_text(task_id)
         task_bundle = session_service.get_task(normalized_task_id)
         if not task_bundle:
-            raise HTTPException(status_code=404, detail=ValidationError("??????").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Task not found.").to_dict())
 
         task = task_bundle["task"]
         trace = trace_service.get_trace(task["trace_id"]) if task["trace_id"] else None
@@ -1372,7 +1218,7 @@ def create_app():
         require_permission(request, "task.read")
         task = session_service.get_task(task_id)
         if not task:
-            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Task not found.").to_dict())
         events = session_service.list_task_events(task_id, limit=max(1, min(limit, 200)), offset=max(0, offset))
         return TaskEventListResponse(
             task_events=[
@@ -1393,10 +1239,10 @@ def create_app():
 
     @app.get("/tasks/{task_id}/routes", response_model=RouteDecisionListResponse, responses={404: {"model": ErrorResponse}})
     def get_task_routes(task_id: str, request: Request) -> RouteDecisionListResponse:
-        require_permission(request, "task.read")
+        require_permission(request, "routing.read")
         task = session_service.get_task(task_id)
         if not task:
-            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Task not found.").to_dict())
         return RouteDecisionListResponse(route_decisions=task["route_decisions"])
 
     @app.get("/routes", response_model=RouteDecisionListResponse)
@@ -1408,7 +1254,7 @@ def create_app():
         limit: int = 50,
         offset: int = 0,
     ) -> RouteDecisionListResponse:
-        require_permission(request, "task.read")
+        require_permission(request, "routing.read")
         decisions = session_service.list_route_decisions(
             task_id=sanitize_text(task_id or "") or None,
             session_id=sanitize_text(session_id or "") or None,
@@ -1426,7 +1272,7 @@ def create_app():
         limit: int = 20,
         offset: int = 0,
     ) -> RouteDecisionStatsResponse:
-        require_permission(request, "task.read")
+        require_permission(request, "routing.read")
         stats = session_service.list_route_decision_stats(
             session_id=sanitize_text(session_id or "") or None,
             trace_id=sanitize_text(trace_id or "") or None,
@@ -1481,16 +1327,20 @@ def create_app():
         require_permission(request, "trace.read")
         trace = trace_service.get_trace(sanitize_text(trace_id))
         if not trace:
-            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
         return TraceResponse(trace=TracePayload(**trace))
 
     @app.get("/traces/{trace_id}/summary", response_model=TraceSummaryResponse, responses={404: {"model": ErrorResponse}})
     def get_trace_summary(trace_id: str, request: Request) -> TraceSummaryResponse:
         require_permission(request, "trace.read")
+        summary = trace_console_service.get_trace_summary(sanitize_text(trace_id))
+        if not summary:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
+        return TraceSummaryResponse(summary=summary)
         normalized_trace_id = sanitize_text(trace_id)
         trace = trace_service.get_trace(normalized_trace_id)
         if not trace:
-            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
 
         task_bundle = session_service.get_task(trace["task_id"]) if trace["task_id"] else None
         route_decisions = task_bundle["route_decisions"] if task_bundle else session_service.list_route_decisions(trace_id=normalized_trace_id, limit=100, offset=0)
@@ -1567,10 +1417,14 @@ def create_app():
     @app.get("/traces/{trace_id}/timeline", response_model=TraceTimelineResponse, responses={404: {"model": ErrorResponse}})
     def get_trace_timeline(trace_id: str, request: Request) -> TraceTimelineResponse:
         require_permission(request, "trace.read")
+        timeline = trace_console_service.get_trace_timeline(sanitize_text(trace_id))
+        if not timeline:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
+        return TraceTimelineResponse(**timeline)
         normalized_trace_id = sanitize_text(trace_id)
         trace = trace_service.get_trace(normalized_trace_id)
         if not trace:
-            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
 
         task_bundle = session_service.get_task(trace["task_id"]) if trace["task_id"] else None
         route_decisions = task_bundle["route_decisions"] if task_bundle else session_service.list_route_decisions(trace_id=normalized_trace_id, limit=100, offset=0)
@@ -1592,10 +1446,14 @@ def create_app():
     @app.get("/traces/{trace_id}/graph", response_model=TraceGraphResponse, responses={404: {"model": ErrorResponse}})
     def get_trace_graph(trace_id: str, request: Request) -> TraceGraphResponse:
         require_permission(request, "trace.read")
+        graph_payload = trace_console_service.get_trace_graph(sanitize_text(trace_id))
+        if not graph_payload:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
+        return TraceGraphResponse(**graph_payload)
         normalized_trace_id = sanitize_text(trace_id)
         trace = trace_service.get_trace(normalized_trace_id)
         if not trace:
-            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
 
         task_bundle = session_service.get_task(trace["task_id"]) if trace["task_id"] else None
         route_decisions = task_bundle["route_decisions"] if task_bundle else session_service.list_route_decisions(trace_id=normalized_trace_id, limit=100, offset=0)
@@ -1603,6 +1461,38 @@ def create_app():
         alerts = alert_service.list_alerts(trace_id=normalized_trace_id, limit=100, offset=0)
         nodes, edges = _build_trace_graph(trace, task_bundle, route_decisions, tool_results, alerts)
         return TraceGraphResponse(trace=TracePayload(**trace), nodes=nodes, edges=edges)
+
+    @app.get("/console/traces", response_model=ConsoleTraceListResponse)
+    def list_console_traces(
+        request: Request,
+        trace_id: str | None = None,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        path: str | None = None,
+        method: str | None = None,
+        status_code: int | None = None,
+        route_name: str | None = None,
+        started_from: str | None = None,
+        started_to: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> ConsoleTraceListResponse:
+        require_permission(request, "trace.read")
+        require_permission(request, "alert.read")
+        payload = trace_console_service.list_console_traces(
+            trace_id=sanitize_text(trace_id or "") or None,
+            task_id=sanitize_text(task_id or "") or None,
+            session_id=sanitize_text(session_id or "") or None,
+            path=sanitize_text(path or "") or None,
+            method=sanitize_text(method or "") or None,
+            status_code=status_code,
+            route_name=sanitize_text(route_name or "") or None,
+            started_from=sanitize_text(started_from or "") or None,
+            started_to=sanitize_text(started_to or "") or None,
+            page=max(1, page),
+            page_size=max(1, min(page_size, 100)),
+        )
+        return ConsoleTraceListResponse(**payload)
 
     @app.get(
         "/console/traces/{trace_id}/viewer",
@@ -1612,10 +1502,14 @@ def create_app():
     def get_trace_console_viewer(trace_id: str, request: Request) -> TraceConsoleViewerResponse:
         require_permission(request, "trace.read")
         require_permission(request, "alert.read")
+        viewer_payload = trace_console_service.get_trace_viewer(sanitize_text(trace_id))
+        if not viewer_payload:
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
+        return TraceConsoleViewerResponse(**viewer_payload)
         normalized_trace_id = sanitize_text(trace_id)
         trace = trace_service.get_trace(normalized_trace_id)
         if not trace:
-            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
 
         task_bundle = session_service.get_task(trace["task_id"]) if trace["task_id"] else None
         route_decisions = (
@@ -1777,7 +1671,7 @@ def create_app():
         require_permission(request, "alert.read")
         alert = alert_service.get_alert(sanitize_text(alert_id))
         if not alert:
-            raise HTTPException(status_code=404, detail=ValidationError("告警不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Alert not found.").to_dict())
         return AlertEventResponse(
             alert=AlertEventPayload(
                 id=alert["id"],
@@ -1799,7 +1693,7 @@ def create_app():
         normalized_trace_id = sanitize_text(trace_id)
         trace = trace_service.get_trace(normalized_trace_id)
         if not trace:
-            raise HTTPException(status_code=404, detail=ValidationError("Trace 不存在。").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("Trace missing.").to_dict())
         alerts = alert_service.list_alerts(trace_id=normalized_trace_id, limit=100, offset=0)
         return AlertEventListResponse(
             alerts=[
@@ -1824,7 +1718,7 @@ def create_app():
         require_permission(request, "asset.analyze")
         raw_input = sanitize_text(payload.input)
         if not raw_input:
-            raise ValidationError("input 不能为空。")
+            raise ValidationError("input must not be empty.")
         normalized_user_input, input_assets = parse_input_assets(raw_input)
         route_decision = request_route_service.decide(
             user_input=normalized_user_input,
@@ -1860,7 +1754,7 @@ def create_app():
     ) -> UploadAssetResponse:
         require_permission(request, "asset.upload")
         if not file.filename:
-            raise ValidationError("上传文件名不能为空。")
+            raise ValidationError("uploaded filename must not be empty.")
         file_bytes = await file.read()
         user_input, asset, inferred_kind, saved_path = create_uploaded_asset(
             filename=file.filename,
@@ -1919,3 +1813,4 @@ def create_app():
         )
 
     return app
+
