@@ -5,6 +5,7 @@ import { TraceDetailEntryPage } from "../pages/traces/TraceDetailEntryPage";
 import { TaskDetailPage } from "../pages/tasks/TaskDetailPage";
 import { ObservabilityDashboardPage } from "../pages/observability/ObservabilityDashboardPage";
 import { LoginPage } from "../pages/auth/LoginPage";
+import { RequireAuth } from "../features/auth/RequireAuth";
 
 export const router = createBrowserRouter([
   {
@@ -13,7 +14,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/",
-    element: <App />,
+    element: (
+      <RequireAuth>
+        <App />
+      </RequireAuth>
+    ),
     children: [
       {
         index: true,

@@ -1,4 +1,4 @@
-﻿.trace-detail-hero {
+.trace-detail-hero {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -7,12 +7,28 @@
 
 .trace-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-section);
   margin-top: 0;
 }
 
+.trace-detail-grid-3col {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 360px;
+  align-items: start;
+}
+
+.trace-detail-column {
+  display: grid;
+  gap: var(--space-section);
+  min-width: 0;
+}
+
+.trace-detail-column-aside {
+  position: sticky;
+  top: 96px;
+}
+
 .detail-panel {
+  min-height: var(--detail-panel-min-height);
   padding: 18px;
 }
 
@@ -217,4 +233,3 @@
   color: var(--color-text-tertiary);
   overflow-wrap: anywhere;
 }
-

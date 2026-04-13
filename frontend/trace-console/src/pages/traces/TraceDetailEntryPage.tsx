@@ -1,20 +1,21 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { LinkButton } from "../../components/LinkButton";
-import { PageStateView } from "../../components/PageStateView";
-import { getTraceConsoleViewer } from "../../features/trace-console/api/traceConsoleApi";
-import { TraceAlertsPanel } from "../../features/trace-console/components/TraceAlertsPanel";
-import { TraceConsoleLogsPanel } from "../../features/trace-console/components/TraceConsoleLogsPanel";
-import { TraceGraphPanel } from "../../features/trace-console/components/TraceGraphPanel";
-import { TraceOverviewPanel } from "../../features/trace-console/components/TraceOverviewPanel";
-import { TraceTimelinePanel } from "../../features/trace-console/components/TraceTimelinePanel";
-import type { TraceConsoleViewer } from "../../features/trace-console/types/traceConsole";
-import { DetailPageShell } from "../../layouts/DetailPageShell";
-import { UI_TEXT } from "../../constants/uiText";
-import { HttpError } from "../../lib/http/client";
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { LinkButton } from '../../components/LinkButton';
+import { PageStateView } from '../../components/PageStateView';
+import { UI_CONFIG } from '../../config/ui.config';
+import { UI_TEXT } from '../../constants/uiText';
+import { getTraceConsoleViewer } from '../../features/trace-console/api/traceConsoleApi';
+import { TraceAlertsPanel } from '../../features/trace-console/components/TraceAlertsPanel';
+import { TraceConsoleLogsPanel } from '../../features/trace-console/components/TraceConsoleLogsPanel';
+import { TraceGraphPanel } from '../../features/trace-console/components/TraceGraphPanel';
+import { TraceOverviewPanel } from '../../features/trace-console/components/TraceOverviewPanel';
+import { TraceTimelinePanel } from '../../features/trace-console/components/TraceTimelinePanel';
+import type { TraceConsoleViewer } from '../../features/trace-console/types/traceConsole';
+import { DetailPageShell } from '../../layouts/DetailPageShell';
+import { HttpError } from '../../lib/http/client';
 
 export function TraceDetailEntryPage() {
-  const { traceId = "" } = useParams();
+  const { traceId = '' } = useParams();
   const [viewer, setViewer] = useState<TraceConsoleViewer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,14 +39,10 @@ export function TraceDetailEntryPage() {
 
       try {
         const response = await getTraceConsoleViewer(traceId);
-        if (!active) {
-          return;
-        }
+        if (!active) return;
         setViewer(response.viewer);
       } catch (caught) {
-        if (!active) {
-          return;
-        }
+        if (!active) return;
         setViewer(null);
         if (caught instanceof HttpError && (caught.status === 401 || caught.status === 403)) {
           setNoPermission(true);
@@ -57,9 +54,7 @@ export function TraceDetailEntryPage() {
         }
         setError(UI_TEXT.state.traceDetailLoadFailed);
       } finally {
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoading(false);
       }
     }
 
@@ -75,18 +70,11 @@ export function TraceDetailEntryPage() {
       title={UI_TEXT.page.traceDetailTitle}
       subtitle={traceId || UI_TEXT.state.missingTraceId}
       hint={UI_TEXT.hint.traceDetail}
-      actions={
-        <LinkButton to="/console/traces">{UI_TEXT.action.backToTraceList}</LinkButton>
-      }
+      kicker={UI_CONFIG.pageShell.pageKickers.traceDetail}
+      actions={<LinkButton to="/console/traces">{UI_TEXT.action.backToTraceList}</LinkButton>}
     >
-
-      {/* 数据状态区 */}
       {loading ? <PageStateView title={UI_TEXT.common.loading} description={UI_TEXT.state.loadingTraceDetail} /> : null}
-
-      {!loading && noPermission ? (
-        <PageStateView title={UI_TEXT.common.noPermission} description={UI_TEXT.state.traceDetailNoPermission} />
-      ) : null}
-
+      {!loading && noPermission ? <PageStateView title={UI_TEXT.common.noPermission} description={UI_TEXT.state.traceDetailNoPermission} /> : null}
       {!loading && !noPermission && error ? (
         <PageStateView
           title={UI_TEXT.common.loadFailed}
@@ -102,15 +90,19 @@ export function TraceDetailEntryPage() {
           }
         />
       ) : null}
-
-      {/* 请求链路详情主体区 */}
       {!loading && !noPermission && !error && viewer ? (
-        <div className="trace-detail-grid">
-          <TraceOverviewPanel viewer={viewer} />
-          <TraceTimelinePanel events={viewer.timeline} />
-          <TraceConsoleLogsPanel taskEvents={viewer.summary.task_events} toolResults={viewer.summary.tool_results} />
-          <TraceAlertsPanel alerts={viewer.alerts} />
-          <TraceGraphPanel nodes={viewer.graph_nodes} edges={viewer.graph_edges} />
+        <div className="trace-detail-grid trace-detail-grid-3col">
+          <div className="trace-detail-column trace-detail-column-primary">
+            <TraceOverviewPanel viewer={viewer} />
+            <TraceTimelinePanel events={viewer.timeline} />
+          </div>
+          <div className="trace-detail-column trace-detail-column-secondary">
+            <TraceConsoleLogsPanel taskEvents={viewer.summary.task_events} toolResults={viewer.summary.tool_results} />
+          </div>
+          <div className="trace-detail-column trace-detail-column-aside">
+            <TraceAlertsPanel alerts={viewer.alerts} />
+            <TraceGraphPanel nodes={viewer.graph_nodes} edges={viewer.graph_edges} />
+          </div>
         </div>
       ) : null}
     </DetailPageShell>

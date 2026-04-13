@@ -1,4 +1,5 @@
 import { UI_TEXT } from "../constants/uiText";
+import { PERMISSIONS } from "../features/auth/permissions";
 import { ROUTE_PATHS } from "./route.config";
 
 export interface NavigationItem {
@@ -6,6 +7,7 @@ export interface NavigationItem {
   to: string;
   badge?: string;
   disabled?: boolean;
+  permissionCodes?: string[];
 }
 
 export interface NavigationSection {
@@ -16,14 +18,14 @@ export interface NavigationSection {
 export const NAVIGATION_SECTIONS: NavigationSection[] = [
   {
     title: UI_TEXT.nav.overview,
-    items: [{ label: UI_TEXT.nav.observability, to: ROUTE_PATHS.observability }]
+    items: [{ label: UI_TEXT.nav.observability, to: ROUTE_PATHS.observability, permissionCodes: [PERMISSIONS.taskRead] }]
   },
   {
     title: UI_TEXT.nav.running,
     items: [
-      { label: UI_TEXT.nav.traces, to: ROUTE_PATHS.traces, badge: "链路" },
-      { label: UI_TEXT.nav.taskManagement, to: ROUTE_PATHS.observability, badge: "任务" },
-      { label: UI_TEXT.nav.alertCenter, to: ROUTE_PATHS.observability }
+      { label: UI_TEXT.nav.traces, to: ROUTE_PATHS.traces, badge: "链路", permissionCodes: [PERMISSIONS.traceRead] },
+      { label: UI_TEXT.nav.taskManagement, to: ROUTE_PATHS.observability, badge: "任务", permissionCodes: [PERMISSIONS.taskRead] },
+      { label: UI_TEXT.nav.alertCenter, to: ROUTE_PATHS.observability, permissionCodes: [PERMISSIONS.taskRead] }
     ]
   },
   {

@@ -1,19 +1,20 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { LinkButton } from "../../components/LinkButton";
-import { PageStateView } from "../../components/PageStateView";
-import { getTaskSummary } from "../../features/trace-console/api/traceConsoleApi";
-import { RelatedTrace } from "../../features/trace-console/components/RelatedTrace";
-import { TaskEvents } from "../../features/trace-console/components/TaskEvents";
-import { TaskOverview } from "../../features/trace-console/components/TaskOverview";
-import { TaskStatus } from "../../features/trace-console/components/TaskStatus";
-import type { TaskSummary } from "../../features/trace-console/types/traceConsole";
-import { DetailPageShell } from "../../layouts/DetailPageShell";
-import { UI_TEXT } from "../../constants/uiText";
-import { HttpError } from "../../lib/http/client";
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { LinkButton } from '../../components/LinkButton';
+import { PageStateView } from '../../components/PageStateView';
+import { UI_CONFIG } from '../../config/ui.config';
+import { UI_TEXT } from '../../constants/uiText';
+import { getTaskSummary } from '../../features/trace-console/api/traceConsoleApi';
+import { RelatedTrace } from '../../features/trace-console/components/RelatedTrace';
+import { TaskEvents } from '../../features/trace-console/components/TaskEvents';
+import { TaskOverview } from '../../features/trace-console/components/TaskOverview';
+import { TaskStatus } from '../../features/trace-console/components/TaskStatus';
+import type { TaskSummary } from '../../features/trace-console/types/traceConsole';
+import { DetailPageShell } from '../../layouts/DetailPageShell';
+import { HttpError } from '../../lib/http/client';
 
 export function TaskDetailPage() {
-  const { taskId = "" } = useParams();
+  const { taskId = '' } = useParams();
   const [summary, setSummary] = useState<TaskSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,14 +38,10 @@ export function TaskDetailPage() {
 
       try {
         const response = await getTaskSummary(taskId);
-        if (!active) {
-          return;
-        }
+        if (!active) return;
         setSummary(response.summary);
       } catch (caught) {
-        if (!active) {
-          return;
-        }
+        if (!active) return;
         setSummary(null);
         if (caught instanceof HttpError && (caught.status === 401 || caught.status === 403)) {
           setNoPermission(true);
@@ -52,9 +49,7 @@ export function TaskDetailPage() {
         }
         setError(UI_TEXT.state.taskSummaryLoadFailed);
       } finally {
-        if (active) {
-          setLoading(false);
-        }
+        if (active) setLoading(false);
       }
     }
 
@@ -72,18 +67,11 @@ export function TaskDetailPage() {
       title={UI_TEXT.page.taskDetailTitle}
       subtitle={taskId ? `${UI_TEXT.page.taskDetailSubtitle} ${taskId}` : UI_TEXT.state.missingTaskId}
       hint={UI_TEXT.hint.taskDetail}
-      actions={
-        <LinkButton to="/console/traces">{UI_TEXT.action.backToTraceList}</LinkButton>
-      }
+      kicker={UI_CONFIG.pageShell.pageKickers.taskDetail}
+      actions={<LinkButton to="/console/traces">{UI_TEXT.action.backToTraceList}</LinkButton>}
     >
-
-      {/* 数据状态区 */}
       {loading ? <PageStateView title={UI_TEXT.common.loading} description={UI_TEXT.state.loadingTaskSummary} /> : null}
-
-      {!loading && noPermission ? (
-        <PageStateView title={UI_TEXT.common.noPermission} description={UI_TEXT.state.taskNoPermission} />
-      ) : null}
-
+      {!loading && noPermission ? <PageStateView title={UI_TEXT.common.noPermission} description={UI_TEXT.state.taskNoPermission} /> : null}
       {!loading && !noPermission && error ? (
         <PageStateView
           title={UI_TEXT.common.loadFailed}
@@ -95,18 +83,21 @@ export function TaskDetailPage() {
           }
         />
       ) : null}
-
       {!loading && !noPermission && !error && summary && !task ? (
         <PageStateView title={UI_TEXT.state.taskNotFound} description={UI_TEXT.state.noTaskSummary} />
       ) : null}
-
-      {/* 任务详情主体区 */}
       {!loading && !noPermission && !error && summary && task ? (
-        <div className="trace-detail-grid">
-          <TaskOverview task={task} />
-          <TaskStatus task={task} />
-          <TaskEvents events={summary.task_events ?? []} />
-          <RelatedTrace task={task} trace={summary.trace ?? null} />
+        <div className="trace-detail-grid trace-detail-grid-3col">
+          <div className="trace-detail-column trace-detail-column-primary">
+            <TaskOverview task={task} />
+            <TaskEvents events={summary.task_events ?? []} />
+          </div>
+          <div className="trace-detail-column trace-detail-column-secondary">
+            <TaskStatus task={task} />
+          </div>
+          <div className="trace-detail-column trace-detail-column-aside">
+            <RelatedTrace task={task} trace={summary.trace ?? null} />
+          </div>
         </div>
       ) : null}
     </DetailPageShell>

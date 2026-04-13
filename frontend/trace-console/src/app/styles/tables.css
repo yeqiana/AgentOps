@@ -1,11 +1,15 @@
-﻿.toolbar {
+.toolbar {
   margin-top: 0;
-  padding: 16px;
+  padding: 0 18px 18px;
+}
+
+.toolbar-compact .toolbar-form {
+  margin-top: 16px;
 }
 
 .toolbar-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -13,6 +17,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  grid-column: span 2;
+}
+
+.field-group-sm {
+  grid-column: span 1;
 }
 
 .field-group label {
@@ -24,10 +33,10 @@
 .field-group input,
 .field-group select {
   width: 100%;
-  min-height: 40px;
+  min-height: var(--control-height);
   padding: 0 12px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--color-bg-panel);
   color: var(--color-text-primary);
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
@@ -43,9 +52,9 @@
 .toolbar-actions {
   display: flex;
   gap: 10px;
-  align-items: end;
+  align-items: center;
+  flex-wrap: wrap;
 }
-
 
 .table-panel {
   margin-top: 0;
@@ -61,19 +70,27 @@
 .trace-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px;
+  min-width: 1280px;
   table-layout: fixed;
 }
 
 .trace-table th,
 .trace-table td {
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--color-border-soft);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+}
+
+.trace-table td {
+  min-height: var(--table-row-height);
+  height: var(--table-row-height);
 }
 
 .trace-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--color-bg-muted);
   color: var(--color-text-secondary);
   font-size: 12px;
@@ -90,11 +107,30 @@
 }
 
 .trace-link {
+  display: inline-block;
+  max-width: 100%;
   color: var(--color-primary);
   font-weight: 700;
-  word-break: break-all;
 }
 
+.table-method-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.table-method-chip {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--color-bg-primary-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
 
 .pagination {
   display: flex;
@@ -114,4 +150,3 @@
   display: flex;
   gap: 10px;
 }
-

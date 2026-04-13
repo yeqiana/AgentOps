@@ -1,3 +1,5 @@
+import { getStoredCredential } from "../../features/auth/authStorage";
+
 export class HttpError extends Error {
   status: number;
   payload: unknown;
@@ -27,12 +29,18 @@ function buildUrl(path: string, query?: Record<string, QueryValue>) {
   return `${url.pathname}${url.search}`;
 }
 
+function buildHeaders() {
+  const credential = getStoredCredential();
+  return {
+    Accept: "application/json",
+    ...(credential ? { "X-API-Key": credential } : {})
+  };
+}
+
 export async function getJson<T>(path: string, query?: Record<string, QueryValue>): Promise<T> {
   const response = await fetch(buildUrl(path, query), {
     method: "GET",
-    headers: {
-      Accept: "application/json"
-    }
+    headers: buildHeaders()
   });
 
   const text = await response.text();

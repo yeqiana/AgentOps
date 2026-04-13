@@ -1,4 +1,4 @@
-﻿* {
+* {
   box-sizing: border-box;
 }
 
@@ -12,6 +12,9 @@ body {
   min-width: 320px;
   min-height: 100vh;
   overflow-x: hidden;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
 }
 
 a {
@@ -21,7 +24,8 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -189,3 +193,10 @@ select {
   white-space: pre-wrap;
 }
 
+
+
+.page-section-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-section-title);
+}

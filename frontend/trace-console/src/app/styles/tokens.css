@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color-scheme: light;
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --color-bg: #f5f7fb;
@@ -72,6 +72,17 @@
   --shadow-panel-soft: 0 6px 16px rgba(31, 48, 74, 0.04);
   --shadow-focus: 0 0 0 3px rgba(31, 103, 210, 0.16);
   --shadow-auth-panel: 0 28px 60px rgba(22, 32, 51, 0.16);
+
+  --font-size-page-title: 30px;
+  --font-size-section-title: 18px;
+  --font-size-body: 14px;
+  --font-size-meta: 12px;
+  --shell-sidebar-width: 256px;
+  --shell-header-height: 72px;
+  --control-height: 38px;
+  --table-row-height: 60px;
+  --card-min-height: 168px;
+  --detail-panel-min-height: 240px;
   line-height: 1.5;
   font-weight: 400;
   color: var(--color-text);
@@ -149,5 +160,16 @@
   --shadow-panel-soft: 0 6px 16px rgba(0, 0, 0, 0.22);
   --shadow-focus: 0 0 0 3px rgba(120, 168, 255, 0.22);
   --shadow-auth-panel: 0 28px 60px rgba(0, 0, 0, 0.34);
+
+  --font-size-page-title: 30px;
+  --font-size-section-title: 18px;
+  --font-size-body: 14px;
+  --font-size-meta: 12px;
+  --shell-sidebar-width: 256px;
+  --shell-header-height: 72px;
+  --control-height: 38px;
+  --table-row-height: 60px;
+  --card-min-height: 168px;
+  --detail-panel-min-height: 240px;
 }
 

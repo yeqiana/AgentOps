@@ -1,11 +1,18 @@
-﻿@media (max-width: 1180px) {
+@media (max-width: 1180px) {
   .observability-grid {
     grid-template-columns: 1fr;
   }
 
   .observability-kpi-grid,
-  .observability-grid > .detail-panel {
+  .observability-grid > .detail-panel,
+  .observability-grid-half,
+  .observability-grid-full,
+  .overview-module-panel {
     grid-column: auto;
+  }
+
+  .overview-module-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -35,6 +42,11 @@
     flex-direction: column;
   }
 
+  .header-search {
+    width: 100%;
+    min-width: 0;
+  }
+
   .header-actions input {
     width: min(100%, 320px);
   }
@@ -55,6 +67,10 @@
     border-radius: 20px 20px 0 0;
   }
 
+  .auth-brand-panel h1 {
+    font-size: 32px;
+  }
+
   .auth-form-panel {
     min-height: auto;
     padding: 28px 24px;
@@ -63,7 +79,7 @@
   }
 
   .page-title {
-    font-size: 22px;
+    font-size: 28px;
   }
 
   .page-card {
@@ -81,7 +97,8 @@
 
   .trace-detail-hero,
   .detail-panel-header,
-  .log-entry-header {
+  .log-entry-header,
+  .toolbar-header {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -99,7 +116,35 @@
   }
 
   .observability-kpi-grid,
-  .observability-grid > .detail-panel {
+  .observability-grid > .detail-panel,
+  .observability-grid-half,
+  .observability-grid-full,
+  .overview-module-panel {
+    grid-column: auto;
+  }
+
+  .overview-module-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+@media (max-width: 1380px) {
+  .trace-detail-grid-3col {
+    grid-template-columns: 1fr;
+  }
+
+  .trace-detail-column-aside {
+    position: static;
+    top: auto;
+  }
+
+  .toolbar-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .field-group,
+  .field-group-sm {
     grid-column: auto;
   }
 }
