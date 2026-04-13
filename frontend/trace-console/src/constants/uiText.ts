@@ -1,7 +1,28 @@
 export const UI_TEXT = {
   app: {
-    title: "请求链路控制台",
-    stage: "阶段三最小可用版"
+    title: "AgentOps 控制台",
+    stage: "阶段三最小可用版",
+    navigationLabel: "控制台导航",
+    subtitle: "Agent 运行、观测与治理底座",
+    searchPlaceholder: "搜索请求链路、任务或告警",
+    environment: "开发环境"
+  },
+  nav: {
+    overview: "控制台首页",
+    traces: "请求链路",
+    traceDetail: "请求链路详情",
+    taskDetail: "任务详情",
+    observability: "观测面板",
+    running: "运行与观测",
+    capability: "能力配置",
+    settings: "系统设置",
+    taskManagement: "任务管理",
+    alertCenter: "告警中心",
+    agents: "Agent 管理",
+    tools: "工具管理",
+    modelsAndRouting: "模型与路由",
+    permissions: "权限管理",
+    auditLogs: "审计日志"
   },
   action: {
     search: "查询",
@@ -12,7 +33,8 @@ export const UI_TEXT = {
     nextPage: "下一页",
     backToTraceList: "返回请求链路列表",
     openTaskDetail: "查看任务详情",
-    openTraceDetail: "查看请求链路"
+    openTraceDetail: "查看请求链路",
+    login: "进入控制台"
   },
   common: {
     all: "全部",
@@ -57,10 +79,15 @@ export const UI_TEXT = {
     toolCount: "工具数量",
     source: "来源",
     decisions: "决策数",
+    traceCount: "请求数",
+    alertCount: "告警数",
+    severity: "严重级别",
     lastTask: "最近任务",
     lastTrace: "最近请求链路",
     lastDecidedAt: "最近决策时间",
-    lastUpdatedAt: "最近更新时间"
+    lastUpdatedAt: "最近更新时间",
+    lastStartedAt: "最近开始时间",
+    lastCreatedAt: "最近创建时间"
   },
   page: {
     traceListTitle: "请求链路列表",
@@ -68,7 +95,44 @@ export const UI_TEXT = {
     traceDetailTitle: "请求链路详情",
     taskDetailTitle: "任务详情",
     observabilityTitle: "观测面板",
-    observabilitySubtitle: "全局运行时视图。"
+    observabilitySubtitle: "全局运行时视图。",
+    taskDetailSubtitle: "任务执行摘要与关联请求链路。"
+  },
+  hint: {
+    traceList: "可按请求链路、任务、路径、状态码或路由筛选记录；点击请求链路编号进入详情。",
+    traceDetail: "用于查看单次请求链路的概览、时间线、工具结果、告警和链路结构；如关联任务存在，可跳转任务详情。",
+    taskDetail: "用于查看任务摘要、执行状态、事件记录和关联请求链路。",
+    observability: "用于查看运行时、任务、请求链路、告警和路由决策的聚合概览。"
+  },
+  shell: {
+    productName: "AgentOps",
+    productSubtitle: "运行控制台",
+    footer: "© 2026 AgentOps | 版本 v1.0.0 | 备案号：待备案",
+    userName: "控制台管理员",
+    userRole: "运维控制台",
+    profile: "个人中心",
+    accountSettings: "账号设置",
+    preferences: "系统偏好",
+    switchEnvironment: "切换环境",
+    logout: "退出登录"
+  },
+  login: {
+    title: "登录 AgentOps",
+    subtitle: "请输入账号信息，进入 AI Agent 后台管理系统。",
+    brandTitle: "AgentOps",
+    brandDescription: "AI Agent 后台管理系统，统一管理任务执行、请求链路观测、Agent 配置、工具能力、模型路由与系统设置。",
+    capabilityTask: "任务执行管理：管理任务状态、执行结果、重试记录和运行耗时，为异步任务流转提供基础。",
+    capabilityTrace: "请求链路排障：查看 plan、tool、answer 等节点执行链路，快速定位错误与 token 热点。",
+    capabilityGovernance: "工具与模型配置：集中管理 OCR、搜索、数据库等工具，以及模型与路由策略。",
+    accountLabel: "账号",
+    passwordLabel: "密码",
+    accountPlaceholder: "admin@agentops.local",
+    passwordPlaceholder: "请输入密码",
+    environmentHint: "当前环境：开发环境",
+    rememberLogin: "记住登录状态",
+    forgotPassword: "忘记密码",
+    formHint: "后续可扩展：验证码、单点登录、租户入口、登录失败提示、环境切换提示。",
+    positioning: "当前定位：后台系统入口，不是营销官网。风格基调：稳、清晰、专业，具备平台感。"
   },
   state: {
     loadingTraceList: "正在加载请求链路列表。",
@@ -77,6 +141,8 @@ export const UI_TEXT = {
     traceDetailNoPermission: "当前账号无权查看该请求链路。",
     traceListLoadFailed: "请求链路列表加载失败。",
     traceDetailLoadFailed: "请求链路详情加载失败。",
+    traceRecordMissing: "该请求链路记录不存在或已不可用，请返回列表或观测面板选择其他记录。",
+    staleTraceReferenceHint: "部分关联请求链路可能已不可用，打开后如提示记录不存在，请返回当前页面继续查看其他记录。",
     missingTraceId: "缺少请求链路编号。",
     missingTaskId: "缺少任务编号。",
     loadingTaskSummary: "正在加载任务摘要。",
@@ -103,6 +169,8 @@ export const UI_TEXT = {
     noRecentTasks: "运行概览已加载，但暂无近期任务。",
     noRouteStats: "运行概览已加载，但暂无路由统计数据。",
     noTaskStatusStats: "运行概览已加载，但暂无任务状态数据。",
+    noTraceStats: "运行概览已加载，但暂无请求链路流量统计数据。",
+    noAlertStats: "运行概览已加载，但暂无告警聚合统计数据。",
     noStructureNodes: "暂无结构节点。",
     noStructureEdges: "暂无结构边。"
   },
@@ -128,6 +196,10 @@ export const UI_TEXT = {
     recentAlerts: "近期告警",
     recentActivity: "近期活动",
     recentTasks: "近期任务",
+    traceTrafficStats: "请求链路流量统计",
+    traceTraffic: "请求流量",
+    alertStats: "告警统计",
+    alertAggregation: "告警聚合",
     routeStats: "路由统计",
     routingDecisions: "路由决策",
     graph: "链路结构",
@@ -167,9 +239,14 @@ export const UI_TEXT = {
     activeTaskIds: "活跃任务编号",
     recentTasks: "近期任务",
     recentAlerts: "近期告警",
+    totalTraces: "请求总数",
+    estimatedSuccessRate: "请求成功率（估算）",
+    errorTraces: "错误请求数",
+    rateLimitedTraces: "限流请求数",
     currentRuntimeActiveCount: "当前运行时活跃数量",
     configuredWorkerCapacity: "已配置工作线程容量",
-    fromOperationsOverview: "来自运行概览"
+    fromOperationsOverview: "来自运行概览",
+    fromTraceStats: "来自请求链路统计"
   },
   pagination: {
     summary: (start: number, end: number, total: number) => `显示第 ${start}-${end} 条，共 ${total} 条`,

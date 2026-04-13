@@ -5,6 +5,7 @@ import { TraceFilterBar } from "../../features/trace-console/components/TraceFil
 import { TracePagination } from "../../features/trace-console/components/TracePagination";
 import { TraceTable } from "../../features/trace-console/components/TraceTable";
 import type { ConsoleTraceListResponse, TraceListFilters } from "../../features/trace-console/types/traceConsole";
+import { ListPageShell } from "../../layouts/ListPageShell";
 import { UI_TEXT } from "../../constants/uiText";
 import { HttpError } from "../../lib/http/client";
 
@@ -82,22 +83,36 @@ export function TraceListPage() {
   }
 
   const hasFilters = Object.values(appliedFilters).some((value) => value.trim() !== "");
+  const filtersSlot = (
+    <TraceFilterBar
+      filters={filters}
+      onChange={setFilters}
+      onSubmit={handleSearch}
+      onReset={handleReset}
+      disabled={loading}
+    />
+  );
+  const paginationSlot =
+    !loading && !noPermission && !error && data && data.items.length > 0 ? (
+      <TracePagination
+        page={data.page}
+        pageSize={data.page_size}
+        total={data.total}
+        hasNext={data.has_next}
+        onPageChange={setPage}
+      />
+    ) : null;
 
   return (
-    <div>
-      <section className="panel page-card">
-        <h2 className="page-title">{UI_TEXT.page.traceListTitle}</h2>
-        <p className="page-subtitle">{UI_TEXT.page.traceListSubtitle}</p>
-      </section>
+    <ListPageShell
+      title={UI_TEXT.page.traceListTitle}
+      subtitle={UI_TEXT.page.traceListSubtitle}
+      hint={UI_TEXT.hint.traceList}
+      filters={filtersSlot}
+      pagination={paginationSlot}
+    >
 
-      <TraceFilterBar
-        filters={filters}
-        onChange={setFilters}
-        onSubmit={handleSearch}
-        onReset={handleReset}
-        disabled={loading}
-      />
-
+      {/* 数据状态区 */}
       {loading ? <PageStateView title={UI_TEXT.common.loading} description={UI_TEXT.state.loadingTraceList} /> : null}
 
       {!loading && noPermission ? (
@@ -123,18 +138,10 @@ export function TraceListPage() {
         />
       ) : null}
 
+      {/* 表格内容区 */}
       {!loading && !noPermission && !error && data && data.items.length > 0 ? (
-        <>
-          <TraceTable items={data.items} />
-          <TracePagination
-            page={data.page}
-            pageSize={data.page_size}
-            total={data.total}
-            hasNext={data.has_next}
-            onPageChange={setPage}
-          />
-        </>
+        <TraceTable items={data.items} />
       ) : null}
-    </div>
+    </ListPageShell>
   );
 }

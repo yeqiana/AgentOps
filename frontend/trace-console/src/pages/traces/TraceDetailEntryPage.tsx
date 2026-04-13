@@ -9,6 +9,7 @@ import { TraceGraphPanel } from "../../features/trace-console/components/TraceGr
 import { TraceOverviewPanel } from "../../features/trace-console/components/TraceOverviewPanel";
 import { TraceTimelinePanel } from "../../features/trace-console/components/TraceTimelinePanel";
 import type { TraceConsoleViewer } from "../../features/trace-console/types/traceConsole";
+import { DetailPageShell } from "../../layouts/DetailPageShell";
 import { UI_TEXT } from "../../constants/uiText";
 import { HttpError } from "../../lib/http/client";
 
@@ -50,6 +51,10 @@ export function TraceDetailEntryPage() {
           setNoPermission(true);
           return;
         }
+        if (caught instanceof HttpError && caught.status === 404) {
+          setError(UI_TEXT.state.traceRecordMissing);
+          return;
+        }
         setError(UI_TEXT.state.traceDetailLoadFailed);
       } finally {
         if (active) {
@@ -66,15 +71,16 @@ export function TraceDetailEntryPage() {
   }, [traceId, retryKey]);
 
   return (
-    <div>
-      <section className="panel page-card trace-detail-hero">
-        <div>
-          <h2 className="page-title">{UI_TEXT.page.traceDetailTitle}</h2>
-          <p className="page-subtitle">{traceId || UI_TEXT.state.missingTraceId}</p>
-        </div>
+    <DetailPageShell
+      title={UI_TEXT.page.traceDetailTitle}
+      subtitle={traceId || UI_TEXT.state.missingTraceId}
+      hint={UI_TEXT.hint.traceDetail}
+      actions={
         <LinkButton to="/console/traces">{UI_TEXT.action.backToTraceList}</LinkButton>
-      </section>
+      }
+    >
 
+      {/* 数据状态区 */}
       {loading ? <PageStateView title={UI_TEXT.common.loading} description={UI_TEXT.state.loadingTraceDetail} /> : null}
 
       {!loading && noPermission ? (
@@ -86,13 +92,18 @@ export function TraceDetailEntryPage() {
           title={UI_TEXT.common.loadFailed}
           description={error}
           actions={
-            <button className="button button-primary" type="button" onClick={() => setRetryKey((current) => current + 1)}>
-              {UI_TEXT.action.retry}
-            </button>
+            <>
+              <LinkButton to="/console/traces">{UI_TEXT.action.backToTraceList}</LinkButton>
+              <LinkButton to="/console/observability">{UI_TEXT.nav.observability}</LinkButton>
+              <button className="button button-primary" type="button" onClick={() => setRetryKey((current) => current + 1)}>
+                {UI_TEXT.action.retry}
+              </button>
+            </>
           }
         />
       ) : null}
 
+      {/* 请求链路详情主体区 */}
       {!loading && !noPermission && !error && viewer ? (
         <div className="trace-detail-grid">
           <TraceOverviewPanel viewer={viewer} />
@@ -102,6 +113,6 @@ export function TraceDetailEntryPage() {
           <TraceGraphPanel nodes={viewer.graph_nodes} edges={viewer.graph_edges} />
         </div>
       ) : null}
-    </div>
+    </DetailPageShell>
   );
 }

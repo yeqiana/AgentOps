@@ -8,6 +8,7 @@ import { TaskEvents } from "../../features/trace-console/components/TaskEvents";
 import { TaskOverview } from "../../features/trace-console/components/TaskOverview";
 import { TaskStatus } from "../../features/trace-console/components/TaskStatus";
 import type { TaskSummary } from "../../features/trace-console/types/traceConsole";
+import { DetailPageShell } from "../../layouts/DetailPageShell";
 import { UI_TEXT } from "../../constants/uiText";
 import { HttpError } from "../../lib/http/client";
 
@@ -67,15 +68,16 @@ export function TaskDetailPage() {
   const task = summary?.task ?? null;
 
   return (
-    <div>
-      <section className="panel page-card trace-detail-hero">
-        <div>
-          <h2 className="page-title">{UI_TEXT.page.taskDetailTitle}</h2>
-          <p className="page-subtitle">{taskId || UI_TEXT.state.missingTaskId}</p>
-        </div>
+    <DetailPageShell
+      title={UI_TEXT.page.taskDetailTitle}
+      subtitle={taskId ? `${UI_TEXT.page.taskDetailSubtitle} ${taskId}` : UI_TEXT.state.missingTaskId}
+      hint={UI_TEXT.hint.taskDetail}
+      actions={
         <LinkButton to="/console/traces">{UI_TEXT.action.backToTraceList}</LinkButton>
-      </section>
+      }
+    >
 
+      {/* 数据状态区 */}
       {loading ? <PageStateView title={UI_TEXT.common.loading} description={UI_TEXT.state.loadingTaskSummary} /> : null}
 
       {!loading && noPermission ? (
@@ -98,6 +100,7 @@ export function TaskDetailPage() {
         <PageStateView title={UI_TEXT.state.taskNotFound} description={UI_TEXT.state.noTaskSummary} />
       ) : null}
 
+      {/* 任务详情主体区 */}
       {!loading && !noPermission && !error && summary && task ? (
         <div className="trace-detail-grid">
           <TaskOverview task={task} />
@@ -106,6 +109,6 @@ export function TaskDetailPage() {
           <RelatedTrace task={task} trace={summary.trace ?? null} />
         </div>
       ) : null}
-    </div>
+    </DetailPageShell>
   );
 }

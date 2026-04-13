@@ -1,0 +1,117 @@
+﻿.toolbar {
+  margin-top: 0;
+  padding: 16px;
+}
+
+.toolbar-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-group label {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-group input,
+.field-group select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.field-group input:focus,
+.field-group select:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+}
+
+
+.table-panel {
+  margin-top: 0;
+  overflow: hidden;
+  border-radius: var(--radius-panel);
+}
+
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.trace-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.trace-table th,
+.trace-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.trace-table th {
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.trace-table tbody tr {
+  transition: background 0.14s ease;
+}
+
+.trace-table tbody tr:hover {
+  background: var(--color-bg-muted);
+}
+
+.trace-link {
+  color: var(--color-primary);
+  font-weight: 700;
+  word-break: break-all;
+}
+
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: var(--radius-panel);
+}
+
+.pagination-summary {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.pagination-actions {
+  display: flex;
+  gap: 10px;
+}
+

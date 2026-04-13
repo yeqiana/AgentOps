@@ -1,0 +1,84 @@
+﻿.observability-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+  margin-top: 0;
+}
+
+.observability-kpi-grid {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  gap: 14px;
+}
+
+.observability-grid > .detail-panel {
+  grid-column: span 6;
+  min-width: 0;
+}
+
+.observability-kpi-card {
+  min-height: 120px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-panel);
+  box-shadow: var(--shadow-panel-soft);
+}
+
+.observability-kpi-card p,
+.observability-kpi-card span {
+  margin: 0;
+  color: var(--color-text-tertiary);
+}
+
+.observability-kpi-card strong {
+  display: block;
+  margin: 8px 0 6px;
+  font-size: 28px;
+  overflow-wrap: anywhere;
+}
+
+.observability-kpi-card span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.observability-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.observability-list-card {
+  padding: 14px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-inner);
+  background: var(--color-bg-panel-subtle);
+}
+
+.observability-list-card h4,
+.observability-list-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.observability-list-card > p {
+  margin-top: 10px;
+  color: var(--color-text-body-muted);
+}
+
+.observability-table-wrap {
+  margin-top: 16px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-inner);
+}
+
+
+.panel-hint {
+  margin: 12px 0 0;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+

@@ -1,0 +1,110 @@
+﻿.page-hint-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--color-border-hint);
+  border-radius: var(--radius-inner);
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.page-hint-bar p {
+  margin: 0;
+}
+
+.page-hint-bar button,
+.page-hint-toggle {
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.page-hint-toggle {
+  margin-top: 0;
+}
+
+.app-eyebrow {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+
+.panel {
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.page-card {
+  padding: 20px 22px;
+}
+
+.page-shell {
+  min-width: 0;
+  width: 100%;
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  display: grid;
+  gap: var(--space-section);
+}
+
+.page-shell-content,
+.page-filter-section,
+.page-pagination-section {
+  min-width: 0;
+}
+
+.page-shell-content {
+  display: grid;
+  gap: var(--space-section);
+}
+
+.page-shell-content > .state-view,
+.page-shell-content > .table-panel,
+.page-pagination-section > .pagination {
+  margin-top: 0;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: max-content;
+}
+
+.page-title {
+  margin: 0 0 6px;
+  color: var(--color-text-primary);
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.page-subtitle {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+

@@ -42,33 +42,36 @@ export function AlertSummaryPanel({ alerts }: AlertSummaryPanelProps) {
       {alerts.length === 0 ? (
         <p className="muted-text">{UI_TEXT.state.noRecentAlerts}</p>
       ) : (
-        <div className="observability-list">
-          {alerts.map((alert) => (
-            <article className="observability-list-card" key={alert.id}>
-              <div className="detail-panel-header">
-                <div>
-                  <h4>{truncateText(alert.event_code, 72)}</h4>
-                  <p className="muted-text">
-                    {alert.source_type || "-"} / {truncateText(alert.source_name, 48)} / {alert.created_at || "-"}
-                  </p>
+        <>
+          <p className="panel-hint">{UI_TEXT.state.staleTraceReferenceHint}</p>
+          <div className="observability-list">
+            {alerts.map((alert) => (
+              <article className="observability-list-card" key={alert.id}>
+                <div className="detail-panel-header">
+                  <div>
+                    <h4>{truncateText(alert.event_code, 72)}</h4>
+                    <p className="muted-text">
+                      {alert.source_type || "-"} / {truncateText(alert.source_name, 48)} / {alert.created_at || "-"}
+                    </p>
+                  </div>
+                  <StatusBadge label={alertSeverityLabel(alert.severity)} tone={alertTone(alert.severity)} />
                 </div>
-                <StatusBadge label={alertSeverityLabel(alert.severity)} tone={alertTone(alert.severity)} />
-              </div>
-              <p className="long-text-block line-clamp-3">{truncateText(alert.message)}</p>
-              <details className="long-text-details">
-                <summary>{UI_TEXT.action.viewFullContent}</summary>
-                <p className="long-text-block">{alert.message || "-"}</p>
-              </details>
-              {alert.trace_id ? (
-                <div className="panel-actions">
-                  <Link className="button" to={`/console/traces/${encodeURIComponent(alert.trace_id)}`}>
-                    {UI_TEXT.action.openTraceDetail}
-                  </Link>
-                </div>
-              ) : null}
-            </article>
-          ))}
-        </div>
+                <p className="long-text-block line-clamp-3">{truncateText(alert.message)}</p>
+                <details className="long-text-details">
+                  <summary>{UI_TEXT.action.viewFullContent}</summary>
+                  <p className="long-text-block">{alert.message || "-"}</p>
+                </details>
+                {alert.trace_id ? (
+                  <div className="panel-actions">
+                    <Link className="button" to={`/console/traces/${encodeURIComponent(alert.trace_id)}`}>
+                      {UI_TEXT.action.openTraceDetail}
+                    </Link>
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </>
       )}
     </section>
   );

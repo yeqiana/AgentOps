@@ -1,0 +1,191 @@
+﻿* {
+  box-sizing: border-box;
+}
+
+html,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+
+.button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  background: var(--color-bg-panel);
+  color: var(--color-text);
+  cursor: pointer;
+  font-weight: 650;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.button-primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-bg-primary-hover-soft);
+}
+
+.button-primary:hover:not(:disabled) {
+  border-color: var(--color-primary-hover);
+  background: var(--color-primary-hover);
+  color: var(--color-text-inverse);
+}
+
+.button:focus-visible {
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+
+.muted-text {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.status-neutral {
+  background: var(--color-bg-neutral-soft);
+  color: var(--color-text-neutral);
+}
+
+.status-success {
+  background: var(--color-bg-success-soft);
+  color: var(--color-success);
+}
+
+.status-warning {
+  background: var(--color-bg-warning-soft);
+  color: var(--color-warning);
+}
+
+.status-error {
+  background: var(--color-bg-error-soft);
+  color: var(--color-error);
+}
+
+.state-view {
+  margin-top: 0;
+  padding: 42px 24px;
+  border-radius: var(--radius-panel);
+  text-align: center;
+}
+
+.state-view h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.state-view p {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.placeholder-page {
+  padding: 24px;
+}
+
+.placeholder-page p {
+  color: var(--color-text-tertiary);
+}
+
+
+.truncate-one-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-clamp-2,
+.line-clamp-3,
+.line-clamp-4 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.line-clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  -webkit-line-clamp: 3;
+}
+
+.line-clamp-4 {
+  -webkit-line-clamp: 4;
+}
+
+.long-text-details {
+  margin-top: 6px;
+}
+
+.long-text-details summary {
+  width: max-content;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.long-text-details[open] .line-clamp-2,
+.long-text-details[open] .line-clamp-3,
+.long-text-details[open] .line-clamp-4 {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+.long-text-block {
+  margin: 8px 0 0;
+  color: var(--color-text-body-muted);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+

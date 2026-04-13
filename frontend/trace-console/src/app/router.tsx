@@ -4,15 +4,24 @@ import { TraceListPage } from "../pages/traces/TraceListPage";
 import { TraceDetailEntryPage } from "../pages/traces/TraceDetailEntryPage";
 import { TaskDetailPage } from "../pages/tasks/TaskDetailPage";
 import { ObservabilityDashboardPage } from "../pages/observability/ObservabilityDashboardPage";
+import { LoginPage } from "../pages/auth/LoginPage";
 
 export const router = createBrowserRouter([
+  {
+    path: "/login",
+    element: <LoginPage />
+  },
   {
     path: "/",
     element: <App />,
     children: [
       {
         index: true,
-        element: <Navigate to="/console/traces" replace />
+        element: <Navigate to="/console/observability" replace />
+      },
+      {
+        path: "/console",
+        element: <Navigate to="/console/observability" replace />
       },
       {
         path: "/console/traces",

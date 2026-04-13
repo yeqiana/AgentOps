@@ -215,3 +215,27 @@ export interface OperationsOverviewSummary {
 export interface OperationsOverviewResponse {
   summary: OperationsOverviewSummary;
 }
+
+export interface TraceStat {
+  method: string;
+  path: string;
+  status_code: number;
+  rate_limited: boolean;
+  trace_count: number;
+  last_started_at: string;
+}
+
+export interface TraceStatsResponse {
+  stats: TraceStat[];
+}
+
+export interface AlertStat {
+  severity: string;
+  source_type: string;
+  alert_count: number;
+  last_created_at: string;
+}
+
+export interface AlertStatsResponse {
+  stats: AlertStat[];
+}

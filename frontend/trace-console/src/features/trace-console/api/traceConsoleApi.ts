@@ -1,10 +1,12 @@
 import { getJson } from "../../../lib/http/client";
 import type {
+  AlertStatsResponse,
   ConsoleTraceListResponse,
   OperationsOverviewResponse,
   TaskSummaryResponse,
   TraceConsoleViewerResponse,
-  TraceListFilters
+  TraceListFilters,
+  TraceStatsResponse
 } from "../types/traceConsole";
 
 export interface TraceListRequest extends TraceListFilters {
@@ -26,4 +28,12 @@ export function getTaskSummary(taskId: string) {
 
 export function getOperationsOverview() {
   return getJson<OperationsOverviewResponse>("/operations/overview");
+}
+
+export function getTraceStats() {
+  return getJson<TraceStatsResponse>("/traces/stats");
+}
+
+export function getAlertStats() {
+  return getJson<AlertStatsResponse>("/alerts/stats");
 }
