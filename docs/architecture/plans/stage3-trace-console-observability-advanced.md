@@ -1,5 +1,31 @@
 # Stage3 Trace Console Observability Advanced 实施方案
 
+## 0. 验收结论
+
+结论：本线程已完成，带后端数据一致性问题。
+
+已完成能力：
+
+- `/console/observability` 页面可访问。
+- `GET /operations/overview` 联调正常。
+- `GET /traces/stats` 联调正常。
+- `GET /alerts/stats` 联调正常。
+- KPI 增强正确。
+- `TraceTrafficStatsPanel` 数据链路正常。
+- `AlertStatsPanel` 数据链路正常。
+- 前端构建通过。
+
+已发现问题：
+
+- 当前数据中 `route_stats.last_trace_id` 指向的 trace 在 `/console/traces/{trace_id}/viewer` 返回 `404 Trace missing`。
+- 当前数据中 `recent_alerts.trace_id` 指向的 trace 在 `/console/traces/{trace_id}/viewer` 返回 `404 Trace missing`。
+- `task summary` 中存在 trace 不存在的情况。
+
+问题判断：
+
+- 上述问题属于后端数据一致性问题，不属于本轮前端实现范围。
+- 本线程可判定为已完成，后续进入 `stage3-trace-console-console-polish`。
+
 ## 1. 背景
 
 stage3-trace-console 已完成 Trace、Task 与 Observability 第一阶段能力。当前 `/console/observability` 已经作为 Trace Console 的全局运行态入口，基于 `GET /operations/overview` 展示 runtime、task status、recent tasks、recent alerts 和 route stats。
