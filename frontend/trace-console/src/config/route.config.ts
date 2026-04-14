@@ -5,6 +5,7 @@ export const ROUTE_PATHS = {
   root: "/",
   console: "/console",
   observability: "/console/observability",
+  alerts: "/console/alerts",
   traces: "/console/traces",
   traceDetail: "/console/traces/:traceId",
   taskDetail: "/console/tasks/:taskId"
@@ -25,6 +26,10 @@ const BREADCRUMB_RULES: BreadcrumbRule[] = [
   {
     test: (pathname) => pathname.includes("/console/tasks/"),
     labels: [UI_TEXT.nav.running, UI_TEXT.nav.taskManagement, UI_TEXT.nav.taskDetail]
+  },
+  {
+    test: (pathname) => pathname.includes("/console/alerts"),
+    labels: [UI_TEXT.nav.running, UI_TEXT.nav.alertCenter]
   },
   {
     test: (pathname) => pathname.includes("/console/traces"),

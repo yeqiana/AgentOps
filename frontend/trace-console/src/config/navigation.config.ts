@@ -25,7 +25,7 @@ export const NAVIGATION_SECTIONS: NavigationSection[] = [
     items: [
       { label: UI_TEXT.nav.traces, to: ROUTE_PATHS.traces, badge: "链路", permissionCodes: [PERMISSIONS.traceRead] },
       { label: UI_TEXT.nav.taskManagement, to: ROUTE_PATHS.observability, badge: "任务", permissionCodes: [PERMISSIONS.taskRead] },
-      { label: UI_TEXT.nav.alertCenter, to: ROUTE_PATHS.observability, permissionCodes: [PERMISSIONS.taskRead] }
+      { label: UI_TEXT.nav.alertCenter, to: ROUTE_PATHS.alerts, permissionCodes: [PERMISSIONS.alertRead] }
     ]
   },
   {

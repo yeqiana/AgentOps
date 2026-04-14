@@ -14,7 +14,7 @@ export function RequireAuth({ children }: RequireAuthProps) {
   const location = useLocation();
 
   if (status === "idle" || status === "loading") {
-    return <div style={{ padding: 24 }}>Loading...</div>;
+    return <div style={{ padding: 24 }}>正在加载...</div>;
   }
 
   if (status !== "authenticated") {
@@ -23,7 +23,7 @@ export function RequireAuth({ children }: RequireAuthProps) {
 
   const matchedRoutePermission = ROUTE_PERMISSION_MAP.find((item) => location.pathname.startsWith(item.pathPrefix));
   if (matchedRoutePermission && !hasPermission(matchedRoutePermission.permission)) {
-    return <div style={{ padding: 24 }}>当前账号没有访问该页面的权限。</div>;
+    return <div style={{ padding: 24 }}>当前账号无权访问该页面</div>;
   }
 
   return <>{children}</>;

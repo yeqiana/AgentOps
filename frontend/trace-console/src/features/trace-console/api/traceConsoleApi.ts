@@ -1,5 +1,7 @@
 import { getJson } from "../../../lib/http/client";
 import type {
+  AlertListRequest,
+  AlertListResponse,
   AlertStatsResponse,
   ConsoleTraceListResponse,
   OperationsOverviewResponse,
@@ -36,4 +38,8 @@ export function getTraceStats() {
 
 export function getAlertStats() {
   return getJson<AlertStatsResponse>("/alerts/stats");
+}
+
+export function getAlerts(params: AlertListRequest) {
+  return getJson<AlertListResponse>("/alerts", { ...params });
 }

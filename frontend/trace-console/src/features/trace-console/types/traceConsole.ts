@@ -239,3 +239,31 @@ export interface AlertStat {
 export interface AlertStatsResponse {
   stats: AlertStat[];
 }
+
+export interface AlertListFilters {
+  severity: string;
+  source_type: string;
+  trace_id: string;
+}
+
+export interface AlertListRequest extends AlertListFilters {
+  limit: number;
+  offset: number;
+}
+
+export interface AlertListItem {
+  id: string;
+  trace_id: string | null;
+  source_type: string;
+  source_name: string;
+  severity: string;
+  event_code: string;
+  message: string;
+  payload_json?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface AlertListResponse {
+  alerts: AlertListItem[];
+}

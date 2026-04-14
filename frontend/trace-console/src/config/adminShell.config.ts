@@ -36,8 +36,8 @@ export const ADMIN_SHELL_CONFIG = {
   },
   pageKickers: {
     dashboard: '运行总览',
-    traceList: '链路检索',
-    traceDetail: '链路诊断',
+    traceList: '请求链路检索',
+    traceDetail: '请求链路诊断',
     taskDetail: '任务视图'
   }
 } as const;

@@ -88,7 +88,7 @@ export function TraceListPage() {
   return (
     <ListPageShell
       title={UI_TEXT.page.traceListTitle}
-      subtitle="固定列宽、高密度表格、统一筛选工具栏，用于后台链路检索与问题初筛。"
+      subtitle="固定列宽、高密度表格、统一筛选工具栏，用于后台请求链路检索与问题初筛。"
       hint={UI_TEXT.hint.traceList}
       filters={filtersSlot}
       pagination={paginationSlot}

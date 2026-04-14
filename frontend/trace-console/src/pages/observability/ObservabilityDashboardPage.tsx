@@ -79,16 +79,16 @@ export function ObservabilityDashboardPage() {
 
   return (
     <DashboardPageShell
-      title="控制台首页"
-      subtitle="统一查看任务执行、Trace 观测、Agent 配置与系统治理，保持控制台风格紧凑、清晰、专业。"
-      hint="以后台管理系统的组织视图为主，而不是展示型首页；优先突出近期任务、Trace 异常与能力模块入口。"
+      title={UI_TEXT.page.observabilityTitle}
+      subtitle="统一查看任务执行、请求链路观测、Agent 配置与系统治理，保持控制台风格紧凑、清晰、专业。"
+      hint="以后台管理系统的组织视图为主，而不是展示型首页；优先突出近期任务、请求链路异常与能力模块入口。"
       kicker={UI_CONFIG.pageShell.pageKickers.dashboard}
       actions={
         <>
           <button className="button" type="button" onClick={() => setRetryKey((current) => current + 1)}>
             刷新概览
           </button>
-          <LinkButton to="/console/traces">进入观测</LinkButton>
+          <LinkButton to="/console/traces">查看请求链路</LinkButton>
         </>
       }
     >
@@ -139,9 +139,9 @@ export function ObservabilityDashboardPage() {
                 <span>列表页 · 详情页</span>
               </article>
               <article className="overview-module-card">
-                <h4>Trace 观测</h4>
+                <h4>请求链路观测</h4>
                 <p>查看链路、工具调用、错误定位与 token 消耗，是核心观测模块。</p>
-                <span>链路页 · 详情页</span>
+                <span>请求链路列表 · 请求链路详情</span>
               </article>
               <article className="overview-module-card">
                 <h4>Agent 管理</h4>
