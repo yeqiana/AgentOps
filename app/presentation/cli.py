@@ -30,6 +30,7 @@ from app.domain.models import AgentState
 from app.infrastructure.llm.client import LLMCallError, sanitize_text
 from app.infrastructure.logger import configure_logging, get_logger
 from app.infrastructure.tools.registry import build_default_tool_registry
+from app.infrastructure.trace import TraceService
 
 
 EXIT_COMMANDS = {"exit", "quit", "q"}
@@ -114,6 +115,7 @@ def main() -> None:
     session_service = SessionService()
     task_service = TaskService(tool_registry)
     chat_service = ChatService()
+    trace_service = TraceService()
     state = session_service.create_state(title="CLI Session")
 
     logger.info("CLI 启动完成 session_id=%s", state["session_id"])
@@ -139,7 +141,19 @@ def main() -> None:
         current_state = None
         try:
             normalized_user_input, input_assets = parse_input_assets(user_input)
-            current_state = task_service.prepare_turn_state(state, normalized_user_input, input_assets)
+            trace = trace_service.start_trace(source_type="cli", method="CLI", path="cli://chat")
+            current_state = task_service.prepare_turn_state(
+                state,
+                normalized_user_input,
+                input_assets,
+                trace_id=trace["trace_id"],
+            )
+            trace_service.attach_execution_context(
+                current_state["trace_id"],
+                session_id=current_state["session_id"],
+                turn_id=current_state["turn_id"],
+                task_id=current_state["task_id"],
+            )
             logger.info(
                 "收到用户输入 session_id=%s turn_id=%s trace_id=%s",
                 current_state["session_id"],
@@ -161,6 +175,12 @@ def main() -> None:
                 raise AgentError("system", "streaming_execution_error", "流式执行未返回最终状态。")
 
             session_service.persist_turn(streamed_state)
+            trace_service.attach_execution_context(
+                streamed_state["trace_id"],
+                session_id=streamed_state["session_id"],
+                turn_id=streamed_state["turn_id"],
+                task_id=streamed_state["task_id"],
+            )
             state = streamed_state
             logger.info(
                 "本轮回答生成成功 session_id=%s turn_id=%s trace_id=%s",

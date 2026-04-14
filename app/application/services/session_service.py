@@ -17,7 +17,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from app.domain.errors import AgentError
+from app.domain.errors import AgentError, TraceConsistencyError
 from app.application.agent_service import create_initial_state, parse_input_assets
 from app.domain.models import AgentState, AssetRecord, InputAsset, MessageRecord, RouteDecisionRecord, TaskEventRecord, TaskRecord, ToolResultRecord
 from app.infrastructure.llm.client import sanitize_text
@@ -28,6 +28,7 @@ from app.infrastructure.persistence.repositories import (
     SQLiteSessionRepository,
     SQLiteTaskEventRepository,
     SQLiteTaskRepository,
+    SQLiteTraceRepository,
     SQLiteToolResultRepository,
     SQLiteUserRepository,
 )
@@ -57,6 +58,7 @@ class SessionService:
         self.task_event_repository = SQLiteTaskEventRepository()
         self.tool_result_repository = SQLiteToolResultRepository()
         self.route_decision_repository = SQLiteRouteDecisionRepository()
+        self.trace_repository = SQLiteTraceRepository()
 
     def create_state(self, *, user_name: str = "local-cli-user", title: str = "Agent Session") -> AgentState:
         user = self.user_repository.get_or_create(user_name)
@@ -114,6 +116,7 @@ class SessionService:
         return state
 
     def persist_turn(self, state: AgentState) -> None:
+        self._ensure_trace_exists(state)
         self.session_repository.update_last_trace(
             state["session_id"],
             state["trace_id"],
@@ -138,6 +141,7 @@ class SessionService:
         为什么这么做：
         - 异步任务还未真正执行时，只需要让任务可查，避免提前写入最终态数据。
         """
+        self._ensure_trace_exists(state)
         self.session_repository.update_last_trace(
             state["session_id"],
             state["trace_id"],
@@ -161,6 +165,7 @@ class SessionService:
         为什么这么做：
         - 预留异步任务体系时，至少要有 queued -> running -> completed/failed 这条状态链。
         """
+        self._ensure_trace_exists(state)
         self.session_repository.update_last_trace(
             state["session_id"],
             state["trace_id"],
@@ -184,6 +189,7 @@ class SessionService:
         为什么这么做：
         - “出问题时能查清楚”不能只靠日志，失败任务也必须可查询、可复盘。
         """
+        self._ensure_trace_exists(state)
         self.session_repository.update_last_trace(
             state["session_id"],
             state["trace_id"],
@@ -298,6 +304,7 @@ class SessionService:
         event_message: str,
         event_payload: dict[str, object] | None = None,
     ) -> None:
+        self._ensure_trace_exists(state)
         self.task_event_repository.create(
             self._to_task_event_record(
                 state,
@@ -445,6 +452,19 @@ class SessionService:
         if asset["mime_type"]:
             input_asset["mime_type"] = asset["mime_type"]
         return input_asset
+
+    def _ensure_trace_exists(self, state: AgentState) -> None:
+        trace_id = sanitize_text(state["trace_id"])
+        if not trace_id or not self.trace_repository.get_by_trace_id(trace_id):
+            raise TraceConsistencyError(
+                "trace_id does not exist in sys_request_trace. Call TraceService.start_trace(...) before persisting task data.",
+                trace_id=trace_id or None,
+                details={
+                    "session_id": state["session_id"],
+                    "turn_id": state["turn_id"],
+                    "task_id": state["task_id"],
+                },
+            )
 
     def _to_task_record(self, state: AgentState, *, status: str, error_message: str) -> TaskRecord:
         timestamp = _now_iso()

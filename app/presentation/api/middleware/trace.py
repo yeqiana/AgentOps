@@ -16,7 +16,6 @@ Why this is done this way:
 
 from __future__ import annotations
 
-import uuid
 from typing import Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -32,20 +31,19 @@ class TraceMiddleware(BaseHTTPMiddleware):
         self.trace_service = trace_service
 
     async def dispatch(self, request, call_next: Callable) -> Response:
-        trace_id = sanitize_text(request.headers.get("X-Trace-Id", "")) or f"trace_{uuid.uuid4().hex}"
-        request_id = f"req_{uuid.uuid4().hex}"
-        request.state.trace_id = trace_id
-        request.state.request_id = request_id
-        request.state.rate_limited = False
-        self.trace_service.begin_request(
-            trace_id=trace_id,
-            request_id=request_id,
+        trace = self.trace_service.start_trace(
+            source_type="http",
             method=request.method.upper(),
             path=request.url.path,
             auth_subject=getattr(request.state, "auth_subject", ""),
             auth_type=getattr(request.state, "auth_type", ""),
             idempotency_key=sanitize_text(request.headers.get("Idempotency-Key", "")),
         )
+        trace_id = trace["trace_id"]
+        request_id = trace["request_id"]
+        request.state.trace_id = trace_id
+        request.state.request_id = request_id
+        request.state.rate_limited = False
 
         response = await call_next(request)
         response.headers["X-Trace-Id"] = trace_id

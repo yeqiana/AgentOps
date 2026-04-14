@@ -20,8 +20,10 @@ import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
 
+from app.domain.errors import TraceConsistencyError
 from app.domain.models import AlertEventRecord
 from app.infrastructure.persistence.repositories import SQLiteAlertEventRepository
+from app.infrastructure.trace import TraceService
 
 
 def _now_iso() -> str:
@@ -29,8 +31,9 @@ def _now_iso() -> str:
 
 
 class AlertService:
-    def __init__(self, repository: SQLiteAlertEventRepository | None = None) -> None:
+    def __init__(self, repository: SQLiteAlertEventRepository | None = None, trace_service: TraceService | None = None) -> None:
         self.repository = repository or SQLiteAlertEventRepository()
+        self.trace_service = trace_service or TraceService()
 
     def create_alert(
         self,
@@ -44,10 +47,23 @@ class AlertService:
         payload: dict[str, object] | None = None,
         created_by: str = "system",
     ) -> AlertEventRecord:
+        normalized_trace_id = trace_id.strip()
+        if normalized_trace_id in {"", "none", "test"}:
+            raise TraceConsistencyError(
+                "alert trace_id must reference an existing sys_request_trace record.",
+                trace_id=normalized_trace_id or None,
+                details={"source_type": source_type, "event_code": event_code},
+            )
+        if not self.trace_service.get_trace(normalized_trace_id):
+            raise TraceConsistencyError(
+                "alert trace_id does not exist in sys_request_trace.",
+                trace_id=normalized_trace_id,
+                details={"source_type": source_type, "event_code": event_code},
+            )
         timestamp = _now_iso()
         alert: AlertEventRecord = {
             "id": f"alert_{uuid.uuid4().hex}",
-            "trace_id": trace_id,
+            "trace_id": normalized_trace_id,
             "source_type": source_type,
             "source_name": source_name,
             "severity": severity,

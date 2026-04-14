@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass
 
 from app.infrastructure.alert import get_alert_service
+from app.infrastructure.trace import TraceService
 
 
 @dataclass
@@ -87,7 +88,14 @@ def emit_recovery_alert(
       failure path that blocks the original request.
     """
 
-    safe_trace_id = trace_id or "none"
+    safe_trace_id = trace_id
+    if not safe_trace_id:
+        safe_trace_id = TraceService().start_trace(
+            source_type="system",
+            method="SYSTEM",
+            path="system://alert",
+            created_by="system",
+        )["trace_id"]
     try:
         get_alert_service().create_alert(
             trace_id=safe_trace_id,

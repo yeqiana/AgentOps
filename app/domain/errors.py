@@ -93,6 +93,11 @@ class PersistenceError(AgentError):
         super().__init__("persistence", "persistence_error", message, trace_id, details or {})
 
 
+class TraceConsistencyError(AgentError):
+    def __init__(self, message: str, trace_id: str | None = None, details: dict[str, str] | None = None) -> None:
+        super().__init__("persistence", "trace_consistency_error", message, trace_id, details or {})
+
+
 class AuthenticationError(AgentError):
     def __init__(self, message: str, trace_id: str | None = None, details: dict[str, str] | None = None) -> None:
         super().__init__("auth", "authentication_error", message, trace_id, details or {})

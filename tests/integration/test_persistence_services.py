@@ -19,6 +19,7 @@ from app.application.services.session_service import SessionService
 from app.application.services.task_service import TaskService
 from app.domain.errors import AgentError
 from app.infrastructure.tools.registry import build_default_tool_registry
+from app.infrastructure.trace import TraceService
 
 
 class PersistenceServiceTests(unittest.TestCase):
@@ -38,12 +39,14 @@ class PersistenceServiceTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{database_path}"
         self.session_service = SessionService()
         self.task_service = TaskService(build_default_tool_registry())
+        self.trace_service = TraceService()
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
     def test_session_service_persists_messages_assets_and_task(self) -> None:
         state = self.session_service.create_state(user_name="integration-user", title="Integration Session")
+        trace = self.trace_service.start_trace(source_type="cli", method="CLI", path="cli://chat")
         current_state = self.task_service.prepare_turn_state(
             state,
             "请总结这段文本",
@@ -56,6 +59,7 @@ class PersistenceServiceTests(unittest.TestCase):
                     "storage_mode": "inline_text",
                 }
             ],
+            trace_id=trace["trace_id"],
         )
         current_state["plan"] = "先理解任务，再总结文本。"
         current_state["answer"] = "这是总结结果。"
@@ -82,10 +86,19 @@ class PersistenceServiceTests(unittest.TestCase):
         ]
 
         self.session_service.persist_turn(current_state)
+        self.trace_service.attach_execution_context(
+            current_state["trace_id"],
+            session_id=current_state["session_id"],
+            turn_id=current_state["turn_id"],
+            task_id=current_state["task_id"],
+        )
         bundle = self.session_service.get_session_bundle(current_state["session_id"])
         task = self.session_service.get_task(current_state["task_id"])
+        persisted_trace = self.trace_service.get_trace(current_state["trace_id"])
 
         self.assertIsNotNone(bundle["session"])
+        self.assertIsNotNone(persisted_trace)
+        self.assertEqual(persisted_trace["task_id"], current_state["task_id"])
         self.assertEqual(len(bundle["messages"]), 2)
         self.assertEqual(len(bundle["assets"]), 1)
         self.assertEqual(bundle["messages"][0]["trace_id"], current_state["trace_id"])
@@ -107,6 +120,7 @@ class PersistenceServiceTests(unittest.TestCase):
 
     def test_session_service_persists_failed_task(self) -> None:
         state = self.session_service.create_state(user_name="integration-user", title="Failed Session")
+        trace = self.trace_service.start_trace(source_type="cli", method="CLI", path="cli://chat")
         current_state = self.task_service.prepare_turn_state(
             state,
             "请分析这张图片",
@@ -120,6 +134,7 @@ class PersistenceServiceTests(unittest.TestCase):
                     "local_path": "D:/fake/sample.png",
                 }
             ],
+            trace_id=trace["trace_id"],
         )
         current_state["messages"] = [{"role": "user", "content": "请分析这张图片"}]
         current_state["route_name"] = "multimodal_analysis"
@@ -148,10 +163,19 @@ class PersistenceServiceTests(unittest.TestCase):
         )
 
         self.session_service.persist_failed_turn(current_state, error)
+        self.trace_service.attach_execution_context(
+            current_state["trace_id"],
+            session_id=current_state["session_id"],
+            turn_id=current_state["turn_id"],
+            task_id=current_state["task_id"],
+        )
         task = self.session_service.get_task(current_state["task_id"])
         bundle = self.session_service.get_session_bundle(current_state["session_id"])
+        persisted_trace = self.trace_service.get_trace(current_state["trace_id"])
 
         self.assertIsNotNone(task)
+        self.assertIsNotNone(persisted_trace)
+        self.assertEqual(persisted_trace["task_id"], current_state["task_id"])
         self.assertEqual(task["task"]["status"], "failed")
         self.assertEqual(task["task"]["error_message"], "graph invoke failed")
         self.assertEqual(task["task"]["route_name"], "multimodal_analysis")

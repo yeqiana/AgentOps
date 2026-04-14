@@ -52,6 +52,7 @@ class AsyncTaskService:
         self.request_route_service = request_route_service
 
     def submit_turn(self, state: dict[str, object]) -> None:
+        self._require_existing_trace(str(state["trace_id"]))
         self.session_service.persist_queued_turn(state)  # type: ignore[arg-type]
         self.trace_service.attach_execution_context(
             state["trace_id"],  # type: ignore[index]
@@ -90,6 +91,7 @@ class AsyncTaskService:
         ) or {}
 
     def retry_turn(self, task_id: str, *, trace_id: str) -> dict[str, object]:
+        self._require_existing_trace(trace_id)
         retry_context = self.session_service.build_retry_submission_context(task_id)
         if not retry_context:
             raise ValidationError("任务不存在。")
@@ -157,3 +159,6 @@ class AsyncTaskService:
                 trace_id=state["trace_id"],  # type: ignore[index]
             )
             self.session_service.persist_failed_turn(state, wrapped)  # type: ignore[arg-type]
+
+    def _require_existing_trace(self, trace_id: str) -> None:
+        self.trace_service.start_trace(source_type="background", existing_trace_id=trace_id)

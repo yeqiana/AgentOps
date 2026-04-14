@@ -34,7 +34,7 @@ from app.config import (
     get_upload_download_dir,
     is_async_task_enabled,
 )
-from app.domain.errors import AgentError, ParsingError, ValidationError
+from app.domain.errors import AgentError, ParsingError, TraceConsistencyError, ValidationError
 from app.infrastructure.auth import AuthService
 from app.infrastructure.llm.client import LLMCallError, sanitize_text
 from app.infrastructure.logger import get_logger
@@ -1202,6 +1202,12 @@ def create_app():
 
         task = task_bundle["task"]
         trace = trace_service.get_trace(task["trace_id"]) if task["trace_id"] else None
+        if task["trace_id"] and not trace:
+            raise TraceConsistencyError(
+                "task trace_id does not exist in sys_request_trace.",
+                trace_id=task["trace_id"],
+                details={"task_id": task["id"]},
+            )
         alerts = alert_service.list_alerts(trace_id=task["trace_id"], limit=100, offset=0) if task["trace_id"] else []
         return TaskSummaryResponse(
             summary=TaskSummaryPayload(

@@ -15,6 +15,7 @@ from __future__ import annotations
 import uuid
 
 from app.application.agent_service import append_user_message
+from app.domain.errors import ValidationError
 from app.domain.models import AgentState, InputAsset
 from app.infrastructure.llm.client import sanitize_text
 from app.infrastructure.tools.registry import ToolRegistry
@@ -44,11 +45,16 @@ class TaskService:
         user_input: str,
         input_assets: list[InputAsset],
         *,
-        trace_id: str | None = None,
+        trace_id: str,
         route_name: str = "",
         route_reason: str = "",
         route_source: str = "",
     ) -> AgentState:
+        normalized_trace_id = sanitize_text(trace_id)
+        if not normalized_trace_id:
+            raise ValidationError(
+                "trace_id is required. Call TraceService.start_trace(...) before TaskService.prepare_turn_state(...)."
+            )
         updated_messages = append_user_message(state["messages"], sanitize_text(user_input))
         runtime_context = {**state["runtime_context"], "tools": self.tool_registry.list_tool_names()}
         return {
@@ -61,7 +67,7 @@ class TaskService:
             "tool_results": [],
             "turn_id": _generate_identifier("turn"),
             "task_id": _generate_identifier("task"),
-            "trace_id": sanitize_text(trace_id or "") or _generate_identifier("trace"),
+            "trace_id": normalized_trace_id,
             "execution_mode": "",
             "protocol_summary": "",
             "route_name": sanitize_text(route_name),

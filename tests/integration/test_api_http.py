@@ -27,6 +27,7 @@ from unittest.mock import patch
 
 from app.infrastructure.alert import get_alert_service
 from app.domain.errors import AgentError
+from app.infrastructure.persistence.database import TABLE_SYS_REQUEST_TRACE, get_connection
 from app.infrastructure.trace import TraceService
 from app.presentation.api import create_app
 
@@ -79,6 +80,25 @@ class ApiHttpTests(unittest.TestCase):
             os.environ.pop(name, None)
         get_alert_service.cache_clear()
         self.temp_dir.cleanup()
+
+    def _start_test_trace(self, *, method: str = "GET", path: str = "/test") -> str:
+        trace = TraceService().start_trace(source_type="http", method=method, path=path)
+        return trace["trace_id"]
+
+    def _assert_task_trace_closes(self, task_id: str, client=None) -> dict[str, object]:
+        active_client = client or self.client
+        task_response = active_client.get(f"/tasks/{task_id}")
+        self.assertEqual(task_response.status_code, 200)
+        task_payload = task_response.json()
+        trace_id = task_payload["task"]["trace_id"]
+        trace_response = active_client.get(f"/traces/{trace_id}")
+        self.assertEqual(trace_response.status_code, 200)
+        self.assertEqual(trace_response.json()["trace"]["trace_id"], trace_id)
+        for collection_name in ["task_events", "tool_results", "route_decisions"]:
+            for item in task_payload[collection_name]:
+                self.assertEqual(item["trace_id"], trace_id)
+                self.assertEqual(active_client.get(f"/traces/{item['trace_id']}").status_code, 200)
+        return task_payload
 
     def test_health_endpoint(self) -> None:
         response = self.client.get("/health")
@@ -581,41 +601,36 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(trace_payload["task_id"], payload["task_id"])
         self.assertEqual(trace_payload["session_id"], payload["session_id"])
         self.assertEqual(trace_payload["status_code"], 200)
+        self._assert_task_trace_closes(payload["task_id"])
 
     def test_trace_stats_endpoint_returns_grouped_trace_counts(self) -> None:
         trace_service = TraceService()
-        trace_service.begin_request(
-            trace_id="trace_stats_1",
-            request_id="req_trace_stats_1",
+        trace_1 = trace_service.start_trace(
+            source_type="http",
             method="GET",
             path="/tasks",
             auth_subject="tester",
             auth_type="api_key",
-            idempotency_key="",
         )
-        trace_service.finish_request("trace_stats_1", status_code=200)
+        trace_service.finish_request(trace_1["trace_id"], status_code=200)
 
-        trace_service.begin_request(
-            trace_id="trace_stats_2",
-            request_id="req_trace_stats_2",
+        trace_2 = trace_service.start_trace(
+            source_type="http",
             method="GET",
             path="/tasks",
             auth_subject="tester",
             auth_type="api_key",
-            idempotency_key="",
         )
-        trace_service.finish_request("trace_stats_2", status_code=200)
+        trace_service.finish_request(trace_2["trace_id"], status_code=200)
 
-        trace_service.begin_request(
-            trace_id="trace_stats_3",
-            request_id="req_trace_stats_3",
+        trace_3 = trace_service.start_trace(
+            source_type="http",
             method="POST",
             path="/chat",
             auth_subject="tester",
             auth_type="api_key",
-            idempotency_key="",
         )
-        trace_service.finish_request("trace_stats_3", status_code=429, rate_limited=True)
+        trace_service.finish_request(trace_3["trace_id"], status_code=429, rate_limited=True)
 
         stats_response = self.client.get("/traces/stats")
         self.assertEqual(stats_response.status_code, 200)
@@ -831,22 +846,20 @@ class ApiHttpTests(unittest.TestCase):
 
     def test_console_trace_list_endpoint_keeps_trace_without_task_visible(self) -> None:
         trace_service = TraceService()
-        trace_service.begin_request(
-            trace_id="trace_console_only",
-            request_id="req_console_only",
+        trace = trace_service.start_trace(
+            source_type="http",
             method="GET",
             path="/health",
             auth_subject="tester",
             auth_type="api_key",
-            idempotency_key="",
         )
-        trace_service.finish_request("trace_console_only", status_code=200)
+        trace_service.finish_request(trace["trace_id"], status_code=200)
 
-        response = self.client.get("/console/traces?trace_id=trace_console_only")
+        response = self.client.get(f"/console/traces?trace_id={trace['trace_id']}")
         self.assertEqual(response.status_code, 200)
         items = response.json()["items"]
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["trace_id"], "trace_console_only")
+        self.assertEqual(items[0]["trace_id"], trace["trace_id"])
         self.assertEqual(items[0]["task_id"], "")
         self.assertEqual(items[0]["route_name"], "")
 
@@ -880,6 +893,27 @@ class ApiHttpTests(unittest.TestCase):
         self.assertGreaterEqual(len(summary["task_events"]), 1)
         self.assertGreaterEqual(len(summary["route_decisions"]), 1)
         self.assertEqual(summary["alerts"][0]["event_code"], "task_summary_test_alert")
+
+    def test_task_summary_endpoint_rejects_orphan_task_trace(self) -> None:
+        response = self.client.post(
+            "/chat",
+            json={
+                "message": "帮我写一句简短的自我介绍",
+                "user_name": "orphan-summary-user",
+                "session_title": "Orphan Summary Session",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        with get_connection() as connection:
+            connection.execute(f"DELETE FROM {TABLE_SYS_REQUEST_TRACE} WHERE trace_id = ?", (payload["trace_id"],))
+
+        summary_response = self.client.get(f"/tasks/{payload['task_id']}/summary")
+
+        self.assertEqual(summary_response.status_code, 500)
+        error_payload = summary_response.json()
+        self.assertEqual(error_payload["code"], "trace_consistency_error")
+        self.assertEqual(error_payload["trace_id"], payload["trace_id"])
 
     def test_task_stats_endpoint_returns_grouped_status_counts(self) -> None:
         first_response = self.client.post(
@@ -924,8 +958,9 @@ class ApiHttpTests(unittest.TestCase):
         self.assertGreaterEqual(filtered_map["completed"]["task_count"], 2)
 
     def test_alert_endpoints_can_query_persisted_alerts(self) -> None:
+        trace_id = self._start_test_trace(path="/alerts/test")
         alert = get_alert_service().create_alert(
-            trace_id="trace_alert_test",
+            trace_id=trace_id,
             source_type="llm",
             source_name="openai:gpt-4o-mini",
             severity="warning",
@@ -947,8 +982,10 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(detail_payload["event_code"], "llm_retry_exhausted")
 
     def test_alert_stats_endpoint_returns_grouped_alert_counts(self) -> None:
+        warning_trace_id = self._start_test_trace(path="/alerts/stats/warning")
+        error_trace_id = self._start_test_trace(path="/alerts/stats/error")
         get_alert_service().create_alert(
-            trace_id="trace_alert_stat_1",
+            trace_id=warning_trace_id,
             source_type="llm",
             source_name="mock",
             severity="warning",
@@ -957,7 +994,7 @@ class ApiHttpTests(unittest.TestCase):
             payload={"attempts": 1},
         )
         get_alert_service().create_alert(
-            trace_id="trace_alert_stat_2",
+            trace_id=error_trace_id,
             source_type="tool",
             source_name="ffmpeg",
             severity="error",
@@ -982,8 +1019,16 @@ class ApiHttpTests(unittest.TestCase):
         self.assertTrue(all(item["source_type"] == "llm" for item in filtered_stats))
 
     def test_trace_alert_endpoint_returns_alerts_for_trace(self) -> None:
+        trace_service = TraceService()
+        trace = trace_service.start_trace(
+            source_type="http",
+            method="GET",
+            path="/tools",
+            auth_subject="tester",
+            auth_type="api_key",
+        )
         get_alert_service().create_alert(
-            trace_id="trace_linked_alert",
+            trace_id=trace["trace_id"],
             source_type="tool",
             source_name="ffmpeg",
             severity="error",
@@ -992,23 +1037,13 @@ class ApiHttpTests(unittest.TestCase):
             payload={"failure_count": 3},
         )
 
-        trace_service = TraceService()
-        trace_service.begin_request(
-            trace_id="trace_linked_alert",
-            request_id="req_trace_linked",
-            method="GET",
-            path="/tools",
-            auth_subject="tester",
-            auth_type="api_key",
-            idempotency_key="",
-        )
-        trace_service.finish_request("trace_linked_alert", status_code=200)
+        trace_service.finish_request(trace["trace_id"], status_code=200)
 
-        response = self.client.get("/traces/trace_linked_alert/alerts")
+        response = self.client.get(f"/traces/{trace['trace_id']}/alerts")
         self.assertEqual(response.status_code, 200)
         payload = response.json()["alerts"]
         self.assertEqual(len(payload), 1)
-        self.assertEqual(payload[0]["trace_id"], "trace_linked_alert")
+        self.assertEqual(payload[0]["trace_id"], trace["trace_id"])
         self.assertEqual(payload[0]["event_code"], "tool_circuit_opened")
 
     def test_chat_sessions_and_task_endpoints(self) -> None:
@@ -1132,6 +1167,7 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(task_response.status_code, 200)
         task_payload = task_response.json()
         self.assertEqual(task_payload["task"]["id"], metadata["task_id"])
+        self._assert_task_trace_closes(metadata["task_id"])
 
     def test_async_task_submit_endpoint_queues_and_completes_task(self) -> None:
         runtime_before = self.client.get("/tasks/runtime")
@@ -1166,6 +1202,7 @@ class ApiHttpTests(unittest.TestCase):
         self.assertEqual(final_task_payload["task"]["id"], payload["task_id"])
         self.assertEqual(final_task_payload["task"]["session_id"], payload["session_id"])
         self.assertGreaterEqual(len(final_task_payload["task_events"]), 2)
+        self._assert_task_trace_closes(payload["task_id"])
 
         events_response = self.client.get(f"/tasks/{payload['task_id']}/events")
         self.assertEqual(events_response.status_code, 200)
@@ -1249,6 +1286,7 @@ class ApiHttpTests(unittest.TestCase):
             self.assertEqual(retried_task_response.status_code, 200)
             retried_task = retried_task_response.json()["task"]
             self.assertEqual(retried_task["status"], "queued")
+            self._assert_task_trace_closes(retry_payload["task_id"], client=client)
 
             retried_events_response = client.get(f"/tasks/{retry_payload['task_id']}/events")
             self.assertEqual(retried_events_response.status_code, 200)

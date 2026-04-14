@@ -16,9 +16,16 @@ Why this is done this way:
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
+from app.domain.errors import TraceConsistencyError
+from app.domain.models import TraceRecord
+from app.infrastructure.logger import get_logger
 from app.infrastructure.persistence.repositories import SQLiteTraceRepository
+
+
+logger = get_logger("infrastructure.trace")
 
 
 def _now_iso() -> str:
@@ -28,6 +35,80 @@ def _now_iso() -> str:
 class TraceService:
     def __init__(self) -> None:
         self.repository = SQLiteTraceRepository()
+
+    def start_trace(
+        self,
+        *,
+        source_type: str,
+        existing_trace_id: str | None = None,
+        request_id: str | None = None,
+        method: str = "",
+        path: str = "",
+        auth_subject: str = "",
+        auth_type: str = "",
+        idempotency_key: str = "",
+        created_by: str = "",
+    ) -> TraceRecord:
+        normalized_source = (source_type or "").strip().lower()
+        if normalized_source not in {"http", "cli", "background", "system"}:
+            raise TraceConsistencyError(
+                "trace source_type must be one of: http, cli, background, system.",
+                details={"source_type": source_type or ""},
+            )
+
+        if existing_trace_id:
+            existing = self.repository.get_by_trace_id(existing_trace_id)
+            if not existing:
+                raise TraceConsistencyError(
+                    "existing_trace_id does not exist in sys_request_trace.",
+                    trace_id=existing_trace_id,
+                    details={"source_type": normalized_source},
+                )
+            return existing
+
+        normalized_method, normalized_path = self._normalize_source_context(
+            normalized_source,
+            method=method,
+            path=path,
+        )
+        timestamp = _now_iso()
+        subject = created_by or auth_subject or normalized_source
+        trace: TraceRecord = {
+            "trace_id": f"trace_{uuid.uuid4().hex}",
+            "request_id": request_id or f"req_{uuid.uuid4().hex}",
+            "method": normalized_method,
+            "path": normalized_path,
+            "auth_subject": auth_subject,
+            "auth_type": auth_type,
+            "session_id": "",
+            "turn_id": "",
+            "task_id": "",
+            "status_code": 0,
+            "error_code": "",
+            "idempotency_key": idempotency_key,
+            "rate_limited": False,
+            "created_by": subject,
+            "updated_by": subject,
+            "created_at": timestamp,
+            "started_at": timestamp,
+            "updated_at": timestamp,
+            "ext_data1": normalized_source,
+            "ext_data2": "",
+            "ext_data3": "",
+            "ext_data4": "",
+            "ext_data5": "",
+        }
+        self.repository.create_or_update(trace)
+        return trace
+
+    def _normalize_source_context(self, source_type: str, *, method: str, path: str) -> tuple[str, str]:
+        if source_type == "http":
+            return (method or "HTTP").strip().upper(), (path or "http://unknown").strip()
+        if source_type == "cli":
+            return "CLI", path or "cli://chat"
+        if source_type == "background":
+            return "BACKGROUND", path or "background://task"
+        return "SYSTEM", path or "system://alert"
 
     def begin_request(
         self,
@@ -40,35 +121,21 @@ class TraceService:
         auth_type: str,
         idempotency_key: str,
     ) -> None:
-        timestamp = _now_iso()
-        subject = auth_subject or "anonymous"
-        self.repository.create_or_update(
-            {
-                "trace_id": trace_id,
-                "request_id": request_id,
-                "method": method,
-                "path": path,
-                "auth_subject": auth_subject,
-                "auth_type": auth_type,
-                "session_id": "",
-                "turn_id": "",
-                "task_id": "",
-                "status_code": 0,
-                "error_code": "",
-                "idempotency_key": idempotency_key,
-                "rate_limited": False,
-                "created_by": subject,
-                "updated_by": subject,
-                "created_at": timestamp,
-                "started_at": timestamp,
-                "updated_at": timestamp,
-                "ext_data1": "",
-                "ext_data2": "",
-                "ext_data3": "",
-                "ext_data4": "",
-                "ext_data5": "",
-            }
-        )
+        existing = self.repository.get_by_trace_id(trace_id)
+        if not existing:
+            raise TraceConsistencyError(
+                "begin_request no longer creates trace records. Call TraceService.start_trace(...) to create trace_id.",
+                trace_id=trace_id,
+            )
+        existing["request_id"] = request_id or existing["request_id"]
+        existing["method"] = (method or existing["method"]).upper()
+        existing["path"] = path or existing["path"]
+        existing["auth_subject"] = auth_subject or existing["auth_subject"]
+        existing["auth_type"] = auth_type or existing["auth_type"]
+        existing["idempotency_key"] = idempotency_key or existing["idempotency_key"]
+        existing["updated_by"] = existing["auth_subject"] or existing["updated_by"]
+        existing["updated_at"] = _now_iso()
+        self.repository.create_or_update(existing)
 
     def attach_execution_context(
         self,
@@ -80,7 +147,22 @@ class TraceService:
     ) -> None:
         existing = self.repository.get_by_trace_id(trace_id)
         if not existing:
-            return
+            logger.error(
+                "trace execution context attach failed: missing trace_id=%s session_id=%s turn_id=%s task_id=%s",
+                trace_id,
+                session_id,
+                turn_id,
+                task_id,
+            )
+            raise TraceConsistencyError(
+                "trace_id does not exist in sys_request_trace. Call TraceService.start_trace(...) before attaching execution context.",
+                trace_id=trace_id,
+                details={
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "task_id": task_id,
+                },
+            )
         existing["session_id"] = session_id or existing["session_id"]
         existing["turn_id"] = turn_id or existing["turn_id"]
         existing["task_id"] = task_id or existing["task_id"]
@@ -98,7 +180,11 @@ class TraceService:
     ) -> None:
         existing = self.repository.get_by_trace_id(trace_id)
         if not existing:
-            return
+            logger.error("trace finish failed: missing trace_id=%s", trace_id)
+            raise TraceConsistencyError(
+                "trace_id does not exist in sys_request_trace. Call TraceService.start_trace(...) before finishing trace.",
+                trace_id=trace_id,
+            )
         existing["status_code"] = status_code
         existing["error_code"] = error_code
         existing["rate_limited"] = rate_limited
