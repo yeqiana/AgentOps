@@ -1188,7 +1188,7 @@ def create_app():
         require_permission(request, "task.read")
         task = session_service.get_task(task_id)
         if not task:
-            raise HTTPException(status_code=404, detail=ValidationError("Task not found.").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
         return TaskResponse(**task)
 
 
@@ -1198,7 +1198,7 @@ def create_app():
         normalized_task_id = sanitize_text(task_id)
         task_bundle = session_service.get_task(normalized_task_id)
         if not task_bundle:
-            raise HTTPException(status_code=404, detail=ValidationError("Task not found.").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
 
         task = task_bundle["task"]
         trace = trace_service.get_trace(task["trace_id"]) if task["trace_id"] else None
@@ -1218,7 +1218,7 @@ def create_app():
         require_permission(request, "task.read")
         task = session_service.get_task(task_id)
         if not task:
-            raise HTTPException(status_code=404, detail=ValidationError("Task not found.").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
         events = session_service.list_task_events(task_id, limit=max(1, min(limit, 200)), offset=max(0, offset))
         return TaskEventListResponse(
             task_events=[
@@ -1242,7 +1242,7 @@ def create_app():
         require_permission(request, "routing.read")
         task = session_service.get_task(task_id)
         if not task:
-            raise HTTPException(status_code=404, detail=ValidationError("Task not found.").to_dict())
+            raise HTTPException(status_code=404, detail=ValidationError("任务不存在。").to_dict())
         return RouteDecisionListResponse(route_decisions=task["route_decisions"])
 
     @app.get("/routes", response_model=RouteDecisionListResponse)
