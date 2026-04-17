@@ -23,7 +23,8 @@ from typing import TypedDict
 from app.application.prompt_builder import build_answer_prompt
 from app.domain.models import AgentState
 from app.infrastructure.llm.client import stream_llm
-from app.infrastructure.markdown_utils import normalize_markdown
+from app.infrastructure.logger import get_logger
+from app.infrastructure.markdown_utils import normalize_markdown_if_needed
 from app.workflow.graph import build_graph
 from app.workflow.nodes import (
     append_assistant_message,
@@ -37,6 +38,9 @@ from app.workflow.nodes import (
     tool_node,
 )
 from app.workflow.registry import build_workflow_policy_registry
+
+
+logger = get_logger("application.chat_service")
 
 
 class StreamEvent(TypedDict, total=False):
@@ -106,12 +110,14 @@ class ChatService:
         )
         answer_chunks: list[str] = []
         for chunk in stream_llm(prompt, input_assets=current_state["input_assets"], trace_id=current_state["trace_id"]):
+            logger.debug("stream answer chunk trace_id=%s chunk=%r", current_state["trace_id"], chunk)
             answer_chunks.append(chunk)
             yield {"type": "answer_delta", "delta": chunk}
 
-        answer_text = "".join(answer_chunks).strip()
-        # Normalize Markdown formatting in the answer
-        answer_text = normalize_markdown(answer_text)
+        answer_text = "".join(answer_chunks)
+        if current_state["output_format"].lower() == "markdown":
+            answer_text = normalize_markdown_if_needed(answer_text)
+        logger.debug("stream aggregated answer trace_id=%s answer=%r", current_state["trace_id"], answer_text)
         current_state = {
             **current_state,
             "answer": answer_text,
@@ -120,6 +126,7 @@ class ChatService:
         current_state = critic_node(current_state)
         current_state = review_node(current_state)
 
+        logger.debug("stream done answer trace_id=%s answer=%r", current_state["trace_id"], current_state["answer"])
         yield {
             "type": "done",
             "answer": current_state["answer"],

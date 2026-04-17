@@ -31,7 +31,7 @@ const API_BASE_URL = '';
  * 注意：JSON 中不包含 type 字段，type 来自 event: 行
  */
 function parseSSEEvent(eventType: string | null, dataStr: string | null) {
-  if (!eventType || !dataStr) {
+  if (!eventType || dataStr === null) {
     return null;
   }
 
@@ -91,13 +91,25 @@ export async function* streamChat(
     const decoder = new TextDecoder();
     let buffer = '';
     let eventType: string | null = null;
-    let eventData: string | null = null;
+    let eventDataLines: string[] = [];
+
+    const flushEvent = () => {
+      if (!eventType || eventDataLines.length === 0) {
+        return null;
+      }
+
+      return parseSSEEvent(eventType, eventDataLines.join('\n'));
+    };
 
     try {
       while (true) {
         const { done, value } = await reader.read();
         
-        buffer += decoder.decode(value, { stream: !done });
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done });
+        } else if (done) {
+          buffer += decoder.decode();
+        }
         
         if (done && buffer.length === 0) {
           break;
@@ -110,61 +122,65 @@ export async function* streamChat(
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          const trimmed = line.trim();
+          const protocolLine = line.endsWith('\r') ? line.slice(0, -1) : line;
           
           // 空行表示事件结束
-          if (!trimmed) {
-            if (eventType && eventData) {
-              const event = parseSSEEvent(eventType, eventData);
-              if (event) {
-                yield event;
+          if (protocolLine === '') {
+            const event = flushEvent();
+            if (event) {
+              yield event;
                 
-                // 如果是 done 事件，停止迭代
-                if (event.type === 'done') {
-                  return;
-                }
+              // 如果是 done 事件，停止迭代
+              if (event.type === 'done') {
+                return;
               }
             }
             // 重置当前事件
             eventType = null;
-            eventData = null;
+            eventDataLines = [];
             continue;
           }
           
           // 跳过注释行
-          if (trimmed.startsWith(':')) {
+          if (protocolLine.startsWith(':')) {
             continue;
           }
           
           // 解析 event: 行
-          if (trimmed.startsWith('event:')) {
-            eventType = trimmed.slice(6).trim();
+          if (protocolLine.startsWith('event:')) {
+            const rawEventType = protocolLine.slice(6);
+            eventType = rawEventType.startsWith(' ') ? rawEventType.slice(1) : rawEventType;
             continue;
           }
           
           // 解析 data: 行
-          if (trimmed.startsWith('data:')) {
-            eventData = trimmed.slice(5).trim();
+          if (protocolLine.startsWith('data:')) {
+            const rawData = protocolLine.slice(5);
+            eventDataLines.push(rawData.startsWith(' ') ? rawData.slice(1) : rawData);
             continue;
           }
+        }
+
+        if (done) {
+          break;
         }
       }
 
       // 处理 buffer 中剩余的不完整事件
-      if (buffer.trim()) {
-        const trimmed = buffer.trim();
-        if (trimmed.startsWith('event:')) {
-          eventType = trimmed.slice(6).trim();
-        } else if (trimmed.startsWith('data:')) {
-          eventData = trimmed.slice(5).trim();
+      if (buffer) {
+        const protocolLine = buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer;
+        if (protocolLine.startsWith('event:')) {
+          const rawEventType = protocolLine.slice(6);
+          eventType = rawEventType.startsWith(' ') ? rawEventType.slice(1) : rawEventType;
+        } else if (protocolLine.startsWith('data:')) {
+          const rawData = protocolLine.slice(5);
+          eventDataLines.push(rawData.startsWith(' ') ? rawData.slice(1) : rawData);
         }
-        
-        if (eventType && eventData) {
-          const event = parseSSEEvent(eventType, eventData);
-          if (event) {
-            yield event;
-          }
-        }
+      }
+
+      const event = flushEvent();
+      if (event) {
+        yield event;
       }
     } finally {
       reader.releaseLock();

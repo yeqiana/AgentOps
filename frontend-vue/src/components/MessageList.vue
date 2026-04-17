@@ -35,10 +35,7 @@ const { t } = useI18n();
 // 全局配置 marked，避免每次渲染都重复设置
 marked.setOptions({
   gfm: true,
-  breaks: false,
-  mangle: false,
-  smartLists: true,
-  smartypants: false
+  breaks: false
 });
 
 /**

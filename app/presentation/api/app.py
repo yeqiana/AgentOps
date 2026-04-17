@@ -642,6 +642,7 @@ def create_app():
                             },
                         )
                     elif event["type"] == "answer_delta":
+                        logger.debug("API /chat/stream answer_delta trace_id=%s delta=%r", current_state["trace_id"], event["delta"])
                         yield encode_event("answer_delta", {"delta": event["delta"]})
                     elif event["type"] == "done":
                         final_state = event["state"]
@@ -651,6 +652,11 @@ def create_app():
                             session_id=final_state["session_id"],
                             turn_id=final_state["turn_id"],
                             task_id=final_state["task_id"],
+                        )
+                        logger.debug(
+                            "API /chat/stream done trace_id=%s answer=%r",
+                            final_state["trace_id"],
+                            final_state["answer"],
                         )
                         yield encode_event(
                             "done",
@@ -753,6 +759,7 @@ def create_app():
                             },
                         )
                     elif event["type"] == "answer_delta":
+                        logger.debug("API /api/chat/stream delta trace_id=%s text=%r", current_state["trace_id"], event["delta"])
                         yield encode_event("delta", {"text": event["delta"]})
                     elif event["type"] == "done":
                         final_state = event["state"]
@@ -762,6 +769,11 @@ def create_app():
                             session_id=final_state["session_id"],
                             turn_id=final_state["turn_id"],
                             task_id=final_state["task_id"],
+                        )
+                        logger.debug(
+                            "API /api/chat/stream final trace_id=%s answer=%r",
+                            final_state["trace_id"],
+                            final_state["answer"],
                         )
                         yield encode_event(
                             "final",

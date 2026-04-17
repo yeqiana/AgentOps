@@ -79,6 +79,15 @@ ANSWER_STAGE_PROMPT = """
 优先给结果，再补必要说明。
 """
 
+MARKDOWN_OUTPUT_RULES = """
+当输出格式为 markdown 时，必须输出可被 CommonMark / GFM 解析的 Markdown：
+- 标题必须独占一行，并且 # 后必须有一个空格，例如 `### 标题`
+- 标题、段落、列表、代码块、表格之间必须用真实换行分隔，不要把 Markdown 压成一行
+- 列表每一项必须独占一行
+- 表格每一行必须独占一行
+- 代码块必须使用成对 ``` 围栏，并让代码内容独占行
+"""
+
 CRITIC_STAGE_PROMPT = """
 你现在处于批评阶段。请站在质量复核代理的角度，用 2 到 4 句话指出：
 1. 当前答案是否完整回应了用户任务
@@ -245,7 +254,8 @@ def build_answer_prompt(
         f"当前复核摘要：{review_text}\n\n"
         f"当前执行角色：{role_name}\n"
         f"当前执行职责：{stance_instruction}\n\n"
-        f"{ANSWER_STAGE_PROMPT.strip()}"
+        f"{ANSWER_STAGE_PROMPT.strip()}\n\n"
+        f"{MARKDOWN_OUTPUT_RULES.strip() if state['output_format'].lower() == 'markdown' else ''}"
     )
 
 

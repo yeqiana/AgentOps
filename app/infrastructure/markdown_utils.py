@@ -9,6 +9,39 @@ tables, lists, and code blocks.
 import re
 
 
+def _repair_compact_markdown(text: str) -> str:
+    """
+    Repair Markdown that was generated as one compact paragraph.
+
+    The goal is not to invent formatting, but to restore structural separators
+    around explicit Markdown markers that are already present in the model
+    output, such as `###标题`, `。###下一节`, or `1.列表项 2.列表项`.
+    """
+    result = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # `###标题` is not a Markdown heading. CommonMark requires a space.
+    result = re.sub(r"(?m)^(#{1,6})(?!#)(?=\S)", r"\1 ", result)
+
+    # When a later heading marker is glued to the previous sentence, put it on
+    # a fresh block. Avoid single `#` here because it is too common in prose.
+    result = re.sub(r"([。！？!?；;：:])\s*(#{2,6})(?!#)(?=\S)", r"\1\n\n\2 ", result)
+    result = re.sub(r"(?m)^(#{1,6})\s*", lambda match: f"{match.group(1)} ", result)
+
+    # Repair numbered lists that were flattened into one paragraph.
+    result = re.sub(r"([。！？!?；;：:])\s*(\d+[.)、])(?=\S)", r"\1\n\2 ", result)
+    result = re.sub(r"(\S)\s+(\d+[.)、])(?=[^\d\s])", r"\1\n\2 ", result)
+    result = re.sub(r"(?m)^(\d+[.)、])(?=\S)", r"\1 ", result)
+
+    # Repair bullet lists without touching emphasis markers in normal prose.
+    result = re.sub(r"([。！？!?；;：:])\s*([*+-])(?=\S)", r"\1\n\2 ", result)
+    result = re.sub(r"(?m)^([*+-])(?=\S)", r"\1 ", result)
+
+    # Common compact table shape from JSON/string aggregation: `| a | b || -- | -- |`.
+    result = re.sub(r"\|\s*\|", "|\n|", result)
+
+    return result
+
+
 def normalize_markdown(text):
     """
     Normalize Markdown text by fixing common formatting issues.
@@ -21,6 +54,8 @@ def normalize_markdown(text):
     """
     if not text:
         return text
+
+    text = _repair_compact_markdown(text)
 
     lines = text.split('\n')
     normalized_lines = []
@@ -94,9 +129,6 @@ def normalize_markdown(text):
     # Merge excessive blank lines (more than 2 consecutive)
     result = re.sub(r'\n{3,}', '\n\n', result)
 
-    # Ensure document doesn't start or end with blank lines
-    result = result.strip()
-
     return result
 
 
@@ -112,6 +144,11 @@ def looks_like_broken_markdown(text):
     """
     if not text:
         return False
+
+    if re.search(r"(^|[。！？!?；;：:\s])#{1,6}\S", text):
+        return True
+    if re.search(r"[。！？!?；;：:]\s*(#{2,6}|\d+[.)、]|[*+-])\S", text):
+        return True
 
     lines = text.split('\n')
 

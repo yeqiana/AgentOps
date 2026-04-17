@@ -393,6 +393,7 @@ async function sendMessage(message: string, displayMessage?: string) {
     });
 
     // 3. 调用后端流式接口
+    let rawAssistantText = "";
     for await (const event of streamChat({
       message,
       session_id: sessionId.value || undefined,
@@ -406,10 +407,17 @@ async function sendMessage(message: string, displayMessage?: string) {
         // 修复：后端返回的是 answer_delta，字段是 delta
         const assistantMsg = messages.value.find((m) => m.id === assistantMsgId);
         if (assistantMsg) {
-          assistantMsg.content += event.delta;
+          console.debug("stream answer_delta", JSON.stringify(event.delta));
+          rawAssistantText += event.delta;
+          assistantMsg.content = rawAssistantText;
         }
       } else if (event.type === "done") {
-        // 任务完成，停止迭代
+        const assistantMsg = messages.value.find((m) => m.id === assistantMsgId);
+        if (assistantMsg) {
+          const finalAnswer = event.answer ?? rawAssistantText;
+          console.debug("stream done answer", JSON.stringify(finalAnswer));
+          assistantMsg.content = finalAnswer;
+        }
         break;
       } else if (event.type === "error") {
         //错误

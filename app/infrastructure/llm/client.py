@@ -114,6 +114,10 @@ def sanitize_text(text: str) -> str:
     return text.encode("utf-8", errors="replace").decode("utf-8").strip()
 
 
+def preserve_text(text: str) -> str:
+    return text.encode("utf-8", errors="replace").decode("utf-8")
+
+
 def _get_provider_defaults(provider: str) -> dict[str, str | None]:
     return PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["custom"])
 
@@ -557,14 +561,14 @@ def stream_llm(prompt: str, input_assets: list[InputAsset] | None = None, trace_
             if isinstance(delta, list):
                 for part in delta:
                     if isinstance(part, dict):
-                        text = sanitize_text(part.get("text", ""))
+                        text = preserve_text(part.get("text", ""))
                     else:
-                        text = sanitize_text(str(part))
-                    if text:
+                        text = preserve_text(str(part))
+                    if text != "":
                         yield text
             else:
-                text = sanitize_text(delta)
-                if text:
+                text = preserve_text(delta)
+                if text != "":
                     yield text
     except Exception as error:
         if breaker is not None:

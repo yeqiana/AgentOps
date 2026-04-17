@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 from app.infrastructure.alert import get_alert_service
 from app.infrastructure.tools.failure_recovery import reset_circuit_breakers
-from app.infrastructure.llm.client import LLMCallError, call_llm, get_llm_client, get_llm_settings
+from app.infrastructure.llm.client import LLMCallError, call_llm, get_llm_client, get_llm_settings, stream_llm
 
 
 class LlmRetryTests(unittest.TestCase):
@@ -88,6 +88,37 @@ class LlmRetryTests(unittest.TestCase):
 
             with self.assertRaises(LLMCallError):
                 call_llm("hello", trace_id="trace_test")
+
+    def test_stream_llm_preserves_markdown_newlines_across_chunks(self) -> None:
+        chunks = [
+            type("ChunkLike", (), {"choices": [type("ChoiceLike", (), {"delta": type("DeltaLike", (), {"content": "# 标题"})()})()]})(),
+            type("ChunkLike", (), {"choices": [type("ChoiceLike", (), {"delta": type("DeltaLike", (), {"content": "\n\n"})()})()]})(),
+            type("ChunkLike", (), {"choices": [type("ChoiceLike", (), {"delta": type("DeltaLike", (), {"content": "## 小节\n\n"})()})()]})(),
+            type("ChunkLike", (), {"choices": [type("ChoiceLike", (), {"delta": type("DeltaLike", (), {"content": "* 项目 A\n* 项目 B"})()})()]})(),
+        ]
+
+        with patch("app.infrastructure.llm.client.get_llm_settings") as mock_settings, patch(
+            "app.infrastructure.llm.client._open_completion_stream",
+            return_value=chunks,
+        ), patch(
+            "app.infrastructure.llm.client.is_llm_retry_enabled",
+            return_value=False,
+        ), patch(
+            "app.infrastructure.llm.client.is_llm_circuit_enabled",
+            return_value=False,
+        ), patch(
+            "app.infrastructure.llm.client._get_recovery_config",
+            return_value={"llm_degrade_to_mock": False},
+        ):
+            mock_settings.return_value = type(
+                "SettingsLike",
+                (),
+                {"provider": "openai", "model": "gpt-4o-mini", "api_key": "k", "base_url": None},
+            )()
+
+            result = "".join(stream_llm("markdown please", trace_id="trace_test"))
+
+        self.assertEqual(result, "# 标题\n\n## 小节\n\n* 项目 A\n* 项目 B")
 
     def test_call_llm_opens_circuit_after_retryable_failures(self) -> None:
         retryable = LLMCallError("temporary", details={"retryable": "true"})
