@@ -1,17 +1,18 @@
 """
-Trace middleware.
+Trace 中间件。
 
-What this is:
-- FastAPI middleware for request-level trace records.
+这是一个 FastAPI 中间件，用于为每个进入的 HTTP 请求创建和管理请求级别的 Trace 记录。
 
-What it does:
-- Assigns `trace_id` and `request_id`.
-- Persists request trace metadata before and after handler execution.
-- Returns the trace ID in response headers.
+它的功能：
+- 在请求处理前启动 trace。
+- 将 `trace_id` 和 `request_id` 写入 `request.state`，供后续处理流程使用。
+- 在 HTTP 响应头中返回 `X-Trace-Id` 和 `X-Request-Id`。
+- 在请求处理完成后记录请求状态、错误码和限流信息。
 
-Why this is done this way:
-- Trace persistence must happen consistently for every request, not only in
-  selected route handlers.
+这样设计的原因：
+- Trace 需要对所有请求统一生效，不能依赖单个路由或处理器。
+- 通过中间件边界，可以保证请求生命周期、鉴权上下文、错误和限流状态
+  都被一致地写入追踪系统。
 """
 
 from __future__ import annotations

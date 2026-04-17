@@ -17,6 +17,7 @@ Why this is done this way:
 """
 
 import json
+import os
 
 from app.application.agent_service import create_initial_state, parse_input_assets
 from app.application.services.alert_service import AlertService
@@ -154,6 +155,7 @@ def create_app():
     try:
         from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
         from fastapi.responses import JSONResponse, StreamingResponse
+        from fastapi.middleware.cors import CORSMiddleware
     except ImportError as error:
         raise RuntimeError(
             "fastapi is not installed. Install `fastapi`, `uvicorn`, and `python-multipart` first."
@@ -183,6 +185,14 @@ def create_app():
         trace_service=trace_service,
         task_service=task_service,
         request_route_service=request_route_service,
+    )
+    # CORS 中间件必须最后添加（但会最先执行）
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # 允许所有来源（开发环境）
+        allow_methods=["*"],  # 允许所有方法（包括 OPTIONS）
+        allow_headers=["*"],  # 允许所有请求头
+        allow_credentials=True,
     )
     app.add_middleware(TraceMiddleware, trace_service=trace_service)
     app.add_middleware(GovernanceMiddleware, rate_limiter=RateLimiter(), idempotency_store=IdempotencyStore())
@@ -575,23 +585,32 @@ def create_app():
         responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
     )
     def chat_stream(payload: ChatRequest, request: Request):
+        # 1. 权限校验
         require_permission(request, "chat.execute")
+        # 2. 清洗参数（防注入、防 XSS）
+            # user_input 用户输入的问题
         user_input = sanitize_text(payload.message)
         session_id = sanitize_text(payload.session_id or "")
         user_name = sanitize_text(payload.user_name) or "api-user"
         session_title = sanitize_text(payload.session_title) or "API Session"
         if not user_input:
-            raise ValidationError("message must not be empty.")
-
+            raise ValidationError("输入不能为空.")
+        # 3. 解析用户输入（提取图片 / 文件 / 附件）
         normalized_user_input, input_assets = parse_input_assets(user_input)
         task_service.tool_registry = current_tool_registry()
+        # 4. 确保会话存在（没有就创建）
+            # 有 sessionId 就加载旧会话
+            # 没有就创建新会话
+            # 返回会话上下文（历史消息）
         state = session_service.ensure_session(session_id or None, user_name=user_name, title=session_title)
+        #  5. 路由决策：request_route_service.decide方法决定走哪个 AI / 哪个插件 / 哪种模式
         route_decision = request_route_service.decide(
             user_input=normalized_user_input,
             input_assets=input_assets,
             message_count=len(state["messages"]) + 1,
             route_source="request_entry",
         )
+        # 6. 准备本轮对话状态（把所有信息打包）
         current_state = task_service.prepare_turn_state(
             state,
             normalized_user_input,
@@ -665,6 +684,115 @@ def create_app():
                 )
                 persist_failed_task_if_possible(current_state, unexpected)
                 yield encode_event("error", build_error_response(unexpected).model_dump())
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    @app.get("/api/models")
+    def list_api_models(request: Request) -> dict[str, list[dict[str, str]]]:
+        require_permission(request, "chat.execute")
+        provider = sanitize_text(os.getenv("LLM_PROVIDER", "openai").strip().lower()) or "openai"
+        model = sanitize_text(os.getenv("LLM_MODEL", "gpt-4o-mini").strip()) or "gpt-4o-mini"
+        return {"items": [{"id": model, "name": model, "provider": provider}]}
+
+    @app.post(
+        "/api/chat/stream",
+        responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
+    )
+    def chat_stream_api(payload: dict[str, object], request: Request):
+        require_permission(request, "chat.execute")
+        raw_messages = payload.get("messages", [])
+        messages = raw_messages if isinstance(raw_messages, list) else []
+        last_user_message = ""
+        for item in reversed(messages):
+            if not isinstance(item, dict):
+                continue
+            if item.get("role") == "user":
+                last_user_message = sanitize_text(str(item.get("content", "")))
+                break
+        user_input = last_user_message or sanitize_text(str(payload.get("message", "")))
+        session_id = sanitize_text(str(payload.get("session_id") or ""))
+        user_name = sanitize_text(str(payload.get("user_name") or "web-user")) or "web-user"
+        session_title = sanitize_text(str(payload.get("session_title") or "Lobe Phase 1 Chat")) or "Lobe Phase 1 Chat"
+        if not user_input:
+            raise ValidationError("message must not be empty.")
+
+        normalized_user_input, input_assets = parse_input_assets(user_input)
+        task_service.tool_registry = current_tool_registry()
+        state = session_service.ensure_session(session_id or None, user_name=user_name, title=session_title)
+        route_decision = request_route_service.decide(
+            user_input=normalized_user_input,
+            input_assets=input_assets,
+            message_count=len(state["messages"]) + 1,
+            route_source="request_entry",
+        )
+        current_state = task_service.prepare_turn_state(
+            state,
+            normalized_user_input,
+            input_assets,
+            trace_id=request.state.trace_id,
+            route_name=route_decision["route_name"],
+            route_reason=route_decision["route_reason"],
+            route_source=route_decision["route_source"],
+        )
+
+        def encode_event(event_type: str, payload_dict: dict[str, object]) -> str:
+            payload_with_type = {"type": event_type, **payload_dict}
+            return f"event: {event_type}\ndata: {json.dumps(payload_with_type, ensure_ascii=False)}\n\n"
+
+        def event_stream():
+            try:
+                for event in chat_service.stream_turn_events(current_state):
+                    if event["type"] == "metadata":
+                        yield encode_event(
+                            "start",
+                            {
+                                "session_id": event["session_id"],
+                                "turn_id": event["turn_id"],
+                                "task_id": event["task_id"],
+                                "trace_id": event["trace_id"],
+                            },
+                        )
+                    elif event["type"] == "answer_delta":
+                        yield encode_event("delta", {"text": event["delta"]})
+                    elif event["type"] == "done":
+                        final_state = event["state"]
+                        session_service.persist_turn(final_state)
+                        trace_service.attach_execution_context(
+                            final_state["trace_id"],
+                            session_id=final_state["session_id"],
+                            turn_id=final_state["turn_id"],
+                            task_id=final_state["task_id"],
+                        )
+                        yield encode_event(
+                            "final",
+                            {
+                                "message": {"role": "assistant", "content": final_state["answer"]},
+                                "session_id": final_state["session_id"],
+                                "turn_id": final_state["turn_id"],
+                                "task_id": final_state["task_id"],
+                                "trace_id": final_state["trace_id"],
+                            },
+                        )
+            except ParsingError as error:
+                yield encode_event("error", {"message": build_error_response(error).message})
+            except LLMCallError as error:
+                error.with_trace_id(current_state["trace_id"])
+                persist_failed_task_if_possible(current_state, error)
+                yield encode_event("error", {"message": build_error_response(error).message})
+            except AgentError as error:
+                error.with_trace_id(current_state["trace_id"])
+                persist_failed_task_if_possible(current_state, error)
+                yield encode_event("error", {"message": build_error_response(error).message})
+            except Exception as error:
+                logger.exception("API /api/chat/stream unexpected failure")
+                unexpected = AgentError(
+                    "system",
+                    "unexpected_error",
+                    sanitize_text(str(error)),
+                    trace_id=current_state["trace_id"],
+                )
+                persist_failed_task_if_possible(current_state, unexpected)
+                yield encode_event("error", {"message": build_error_response(unexpected).message})
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 

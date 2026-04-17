@@ -1,4 +1,5 @@
 .venv/
+node_modules/
 __pycache__/
 *.py[cod]
 *.sqlite3
@@ -10,7 +11,11 @@ __pycache__/
 .coverage
 htmlcov/
 logs/
+*.log
 data/whisper_out/
 data/tool_outputs/
 dist/
 build/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

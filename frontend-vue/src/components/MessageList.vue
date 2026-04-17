@@ -36,7 +36,6 @@ const { t } = useI18n();
 marked.setOptions({
   gfm: true,
   breaks: false,
-  headerIds: false,
   mangle: false,
   smartLists: true,
   smartypants: false
@@ -57,7 +56,7 @@ function renderMarkdown(markdown: string): string {
     }
 
     // 基于完整文本重新渲染，保留所有换行和 Markdown 结构
-    return marked.parse(markdown);
+    return marked.parse(markdown) as string;
   } catch (error) {
     console.error('Markdown rendering error:', error);
     // 如果渲染失败，返回纯文本（已转义）

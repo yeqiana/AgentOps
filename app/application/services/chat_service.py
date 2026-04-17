@@ -23,6 +23,7 @@ from typing import TypedDict
 from app.application.prompt_builder import build_answer_prompt
 from app.domain.models import AgentState
 from app.infrastructure.llm.client import stream_llm
+from app.infrastructure.markdown_utils import normalize_markdown
 from app.workflow.graph import build_graph
 from app.workflow.nodes import (
     append_assistant_message,
@@ -80,9 +81,6 @@ class ChatService:
         current_state = tool_node(state)
         current_state = router_node(current_state)
         current_state = protocol_node(current_state)
-        current_state = plan_node(current_state)
-        current_state = debate_node(current_state)
-        current_state = arbitration_node(current_state)
 
         yield {
             "type": "metadata",
@@ -96,6 +94,10 @@ class ChatService:
             "protocol_summary": current_state["protocol_summary"],
         }
 
+        current_state = plan_node(current_state)
+        current_state = debate_node(current_state)
+        current_state = arbitration_node(current_state)
+
         registry = build_workflow_policy_registry()
         prompt = build_answer_prompt(
             current_state,
@@ -108,6 +110,8 @@ class ChatService:
             yield {"type": "answer_delta", "delta": chunk}
 
         answer_text = "".join(answer_chunks).strip()
+        # Normalize Markdown formatting in the answer
+        answer_text = normalize_markdown(answer_text)
         current_state = {
             **current_state,
             "answer": answer_text,

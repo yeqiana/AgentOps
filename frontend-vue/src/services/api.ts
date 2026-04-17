@@ -7,7 +7,7 @@
  * - 解析事件并返回事件迭代器
  */
 
-import type { StreamChatRequest, StreamEvent } from '../types/api';
+import type { StreamChatRequest, StreamEvent, UploadAssetRequest, UploadAssetResponse } from '../types/api';
 
 /**
  * API 基础 URL - 开发环境通过 vite 代理访问
@@ -177,9 +177,43 @@ export async function* streamChat(
   }
 }
 
+export async function uploadAsset(
+  request: UploadAssetRequest
+): Promise<UploadAssetResponse> {
+  const url = `${API_BASE_URL}/assets/upload`;
+  const formData = new FormData();
+
+  formData.append('file', request.file);
+  formData.append('kind', request.kind || 'auto');
+
+  if (request.prompt) {
+    formData.append('prompt', request.prompt);
+  }
+  if (request.session_id) {
+    formData.append('session_id', request.session_id);
+  }
+  formData.append('user_name', request.user_name || 'web-user');
+  formData.append('session_title', request.session_title || 'API Session');
+
+  const response = await fetch(url, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.message || `Upload error: ${response.status} ${response.statusText}`
+    );
+  }
+
+  return response.json() as Promise<UploadAssetResponse>;
+}
+
 /**
  * 生成唯一的消息 ID
  */
 export function generateMessageId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
+

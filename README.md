@@ -197,3 +197,16 @@ docs/
 ```powershell
 git log --oneline
 ```
+
+## frontend-vue
+
+`frontend-vue/` is the Vue 3 + Element Plus frontend workspace for the Figma ChatGPT redesign page.
+
+```powershell
+cd frontend-vue
+npm install
+npm run dev
+```
+
+Default route:
+- `/chatgpt-redesign`

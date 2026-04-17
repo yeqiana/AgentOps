@@ -60,7 +60,13 @@
       </div>
 
       <!-- 用户输入消息 -> draft 更新；点击新建聊天 -> resetDraft；点击发送 -> sendMessage。 -->
-      <ChatComposer v-model="draft" :is-loading="isStreaming" @new-chat="resetDraft" @send="sendMessage" />
+      <ChatComposer
+      v-model="draft"
+      :is-loading="isStreaming"
+      @new-chat="resetDraft"
+      @send="sendMessage"
+      @upload="uploadImage"
+    />
     </section>
   </div>
 </template>
@@ -242,7 +248,7 @@ import IconButton from "../components/IconButton.vue";
 import MessageList from "../components/MessageList.vue";
 import SidebarTabs from "../components/SidebarTabs.vue";
 import WelcomePanel from "../components/WelcomePanel.vue";
-import { generateMessageId, streamChat } from "../services/api";
+import { generateMessageId, streamChat, uploadAsset } from "../services/api";
 import type { ChatMessage } from "../types/api";
 
 const activeTab = ref<"chats" | "saved">("chats");
@@ -308,6 +314,43 @@ function resetDraft() {
   errorMessage.value = "";
 }
 
+async function uploadImage(file: File) {
+  if (isStreaming.value) {
+    return;
+  }
+
+  errorMessage.value = "";
+
+  try {
+    const response = await uploadAsset({
+      file,
+      kind: "image",
+      prompt: draft.value.trim(),
+      session_id: sessionId.value || undefined,
+      user_name: "web-user",
+      session_title: "API Session"
+    });
+
+    sessionId.value = response.session_id;
+
+    const promptText = draft.value.trim().replace(/\|/g, " ");
+    const backendMessage = `/image-file ${response.saved_path}${
+      promptText ? `|${promptText}` : ""
+    }`;
+
+    const displayText = promptText
+      ? `图片解析：${file.name}；${promptText}`
+      : `图片解析：${file.name}`;
+
+    draft.value = "";
+    await sendMessage(backendMessage, displayText);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "上传图片失败";
+    errorMessage.value = errorMsg;
+    console.error("Upload image error:", err);
+  }
+}
+
 /**
  * 改造：用户点击发送按钮 -> 调用后端流式 API
  * 
@@ -320,7 +363,9 @@ function resetDraft() {
  * 6. 处理元数据（session_id）和错误
  * 7. 完成后清空输入框
  */
-async function sendMessage(message: string) {
+async function sendMessage(message: string, displayMessage?: string) {
+  const userMessage = displayMessage || message;
+
   // 防止重复发送和空消息
   if (isStreaming.value || !message.trim()) {
     return;
@@ -336,7 +381,7 @@ async function sendMessage(message: string) {
     messages.value.push({
       id: userMsgId,
       role: "user",
-      content: message
+      content: userMessage
     });
 
     // 2. 创建 assistant 消息占位符

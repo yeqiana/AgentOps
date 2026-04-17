@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## frontend-vue
+
+- `frontend-vue/` is the Vue 3 + Element Plus frontend workspace for Figma-driven UI implementation.
+- Current route entry: `/chatgpt-redesign`.
+- Keep generated `node_modules/` and `dist/` out of commits.
+
 ## 项目定位
 
 - 这是一个基于 Python、LangGraph 和 OpenAI 兼容协议的 Agent 底座项目
