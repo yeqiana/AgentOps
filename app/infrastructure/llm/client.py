@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Iterator
 
+import httpx
 from dotenv import load_dotenv
 from openai import (
     APIConnectionError,
@@ -165,7 +166,10 @@ def get_llm_settings() -> LLMSettings:
 @lru_cache(maxsize=1)
 def get_llm_client() -> OpenAI:
     settings = get_llm_settings()
-    client_kwargs = {"api_key": settings.api_key}
+    client_kwargs = {
+        "api_key": settings.api_key,
+        "http_client": httpx.Client(trust_env=False),
+    }
     if settings.base_url:
         client_kwargs["base_url"] = settings.base_url
     return OpenAI(**client_kwargs)

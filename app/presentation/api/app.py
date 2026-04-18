@@ -18,6 +18,8 @@ Why this is done this way:
 
 import json
 import os
+from pathlib import Path
+from urllib.parse import quote
 
 from app.application.agent_service import create_initial_state, parse_input_assets
 from app.application.services.alert_service import AlertService
@@ -154,7 +156,7 @@ logger = get_logger("presentation.api")
 def create_app():
     try:
         from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-        from fastapi.responses import JSONResponse, StreamingResponse
+        from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
         from fastapi.middleware.cors import CORSMiddleware
     except ImportError as error:
         raise RuntimeError(
@@ -852,6 +854,19 @@ def create_app():
         if not bundle["session"]:
             raise HTTPException(status_code=404, detail=ValidationError("Session not found.").to_dict())
         return AssetListResponse(assets=[AssetPayload(**asset) for asset in bundle["assets"]])
+
+    @app.get("/assets/download", responses={404: {"model": ErrorResponse}})
+    def download_uploaded_asset(path: str, request: Request):
+        require_permission(request, "asset.upload")
+        upload_root = get_upload_download_dir().resolve()
+        requested_path = Path(path).expanduser().resolve()
+        try:
+            requested_path.relative_to(upload_root)
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=ValidationError("Asset not found.").to_dict()) from error
+        if not requested_path.is_file():
+            raise HTTPException(status_code=404, detail=ValidationError("Asset not found.").to_dict())
+        return FileResponse(requested_path, filename=requested_path.name)
 
     @app.get("/assets/{asset_id}", response_model=AssetResponse, responses={404: {"model": ErrorResponse}})
     def get_asset(asset_id: str, request: Request) -> AssetResponse:
@@ -1948,6 +1963,9 @@ def create_app():
             trace_id=current_state["trace_id"],
             upload_dir=str(get_upload_download_dir()),
             saved_path=saved_path,
+            original_name=sanitize_text(file.filename),
+            mime_type=file.content_type or "",
+            download_url=f"/assets/download?path={quote(saved_path)}",
             inferred_kind=inferred_kind,
             user_input=normalized_user_input,
             route_name=current_state["route_name"],

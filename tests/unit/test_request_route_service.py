@@ -13,7 +13,8 @@
 
 import unittest
 import os
-import tempfile
+import shutil
+import uuid
 from pathlib import Path
 
 from app.application.services.config_service import RuntimeConfigService
@@ -22,13 +23,14 @@ from app.application.services.request_route_service import RequestRouteService
 
 class RequestRouteServiceTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
-        database_path = Path(self.temp_dir.name) / "agent.db"
+        self.temp_dir = Path.cwd() / ".tmp-tests" / f"request-route-{uuid.uuid4().hex}"
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        database_path = self.temp_dir / "agent.db"
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{database_path}"
 
     def tearDown(self) -> None:
         os.environ.pop("APP_DATABASE_URL", None)
-        self.temp_dir.cleanup()
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_decide_returns_image_analysis_for_image_asset(self) -> None:
         service = RequestRouteService()
@@ -67,6 +69,25 @@ class RequestRouteServiceTests(unittest.TestCase):
 
         self.assertEqual(decision["route_name"], "deliberation_chat")
         self.assertIn("比较", decision["route_reason"])
+
+    def test_decide_returns_semantic_route_for_decision_prompt(self) -> None:
+        service = RequestRouteService()
+
+        decision = service.decide(
+            user_input="模型网关自研还是采购云服务，哪个更合适",
+            input_assets=[
+                {
+                    "kind": "text",
+                    "name": "text_input",
+                    "content": "模型网关自研还是采购云服务，哪个更合适",
+                    "source": "test",
+                    "storage_mode": "inline_text",
+                }
+            ],
+        )
+
+        self.assertEqual(decision["route_name"], "deliberation_chat")
+        self.assertIn("语义意图", decision["route_reason"])
 
     def test_decide_uses_database_backed_routing_override(self) -> None:
         config_service = RuntimeConfigService()

@@ -65,7 +65,6 @@
       :is-loading="isStreaming"
       @new-chat="resetDraft"
       @send="sendMessage"
-      @upload="uploadImage"
     />
     </section>
   </div>
@@ -249,7 +248,7 @@ import MessageList from "../components/MessageList.vue";
 import SidebarTabs from "../components/SidebarTabs.vue";
 import WelcomePanel from "../components/WelcomePanel.vue";
 import { generateMessageId, streamChat, uploadAsset } from "../services/api";
-import type { ChatMessage } from "../types/api";
+import type { ChatAttachment, ChatMessage } from "../types/api";
 
 const activeTab = ref<"chats" | "saved">("chats");
 const activeConversation = ref("ai-capabilities");
@@ -314,41 +313,72 @@ function resetDraft() {
   errorMessage.value = "";
 }
 
-async function uploadImage(file: File) {
-  if (isStreaming.value) {
-    return;
-  }
+function buildAttachmentCommand(kind: string, savedPath: string, promptText: string) {
+  const prefixByKind: Record<string, string> = {
+    audio: "/audio-file",
+    file: "/file-path",
+    image: "/image-file",
+    video: "/video-file"
+  };
+  const prefix = prefixByKind[kind] ?? "/file-path";
+  return `${prefix} ${savedPath}${promptText ? `|${promptText}` : ""}`;
+}
 
-  errorMessage.value = "";
+function buildAttachmentCommands(uploadedFiles: UploadedFile[], promptText: string) {
+  return uploadedFiles
+    .map((item, index) => {
+      const prompt = index === uploadedFiles.length - 1 ? promptText : "";
+      return buildAttachmentCommand(item.response.inferred_kind, item.response.saved_path, prompt);
+    })
+    .join("\n");
+}
+
+type UploadedFile = {
+  file: File;
+  previewUrl?: string;
+  response: Awaited<ReturnType<typeof uploadAsset>>;
+};
+
+async function uploadPendingFiles(files: File[], promptText: string): Promise<UploadedFile[]> {
+  const uploadedFiles: UploadedFile[] = [];
 
   try {
-    const response = await uploadAsset({
-      file,
-      kind: "image",
-      prompt: draft.value.trim(),
-      session_id: sessionId.value || undefined,
-      user_name: "web-user",
-      session_title: "API Session"
-    });
+    for (const file of files) {
+      const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined;
+      const response = await uploadAsset({
+        file,
+        kind: "auto",
+        prompt: promptText,
+        session_id: sessionId.value || undefined,
+        user_name: "web-user",
+        session_title: "API Session"
+      });
 
-    sessionId.value = response.session_id;
-
-    const promptText = draft.value.trim().replace(/\|/g, " ");
-    const backendMessage = `/image-file ${response.saved_path}${
-      promptText ? `|${promptText}` : ""
-    }`;
-
-    const displayText = promptText
-      ? `图片解析：${file.name}；${promptText}`
-      : `图片解析：${file.name}`;
-
-    draft.value = "";
-    await sendMessage(backendMessage, displayText);
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : "上传图片失败";
-    errorMessage.value = errorMsg;
-    console.error("Upload image error:", err);
+      sessionId.value = response.session_id;
+      uploadedFiles.push({ file, previewUrl, response });
+    }
+  } catch (error) {
+    for (const item of uploadedFiles) {
+      if (item.previewUrl) {
+        URL.revokeObjectURL(item.previewUrl);
+      }
+    }
+    throw error;
   }
+
+  return uploadedFiles;
+}
+
+function toChatAttachments(uploadedFiles: UploadedFile[]): ChatAttachment[] {
+  return uploadedFiles.map(({ file, previewUrl, response }) => ({
+    assetId: response.trace_id,
+    fileName: response.original_name || file.name,
+    kind: response.inferred_kind,
+    previewUrl,
+    savedPath: response.saved_path,
+    url: response.download_url,
+    downloadUrl: response.download_url
+  }));
 }
 
 /**
@@ -363,11 +393,11 @@ async function uploadImage(file: File) {
  * 6. 处理元数据（session_id）和错误
  * 7. 完成后清空输入框
  */
-async function sendMessage(message: string, displayMessage?: string) {
-  const userMessage = displayMessage || message;
+async function sendMessage(message: string, files: File[] = []) {
+  const promptText = message.trim().replace(/\|/g, " ");
 
   // 防止重复发送和空消息
-  if (isStreaming.value || !message.trim()) {
+  if (isStreaming.value || (!promptText && files.length === 0)) {
     return;
   }
 
@@ -376,12 +406,18 @@ async function sendMessage(message: string, displayMessage?: string) {
   isStreaming.value = true;
 
   try {
+    const uploadedFiles = files.length ? await uploadPendingFiles(files, promptText) : [];
+    const attachments = toChatAttachments(uploadedFiles);
+    const backendMessage = uploadedFiles.length ? buildAttachmentCommands(uploadedFiles, promptText) : promptText;
+    const userMessage = promptText;
+
     // 1. 添加 user 消息到列表
     const userMsgId = generateMessageId();
     messages.value.push({
       id: userMsgId,
       role: "user",
-      content: userMessage
+      content: userMessage,
+      attachments
     });
 
     // 2. 创建 assistant 消息占位符
@@ -395,7 +431,7 @@ async function sendMessage(message: string, displayMessage?: string) {
     // 3. 调用后端流式接口
     let rawAssistantText = "";
     for await (const event of streamChat({
-      message,
+      message: backendMessage,
       session_id: sessionId.value || undefined,
       user_name: "web-user",
       session_title: "API Session"

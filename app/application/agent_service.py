@@ -203,6 +203,55 @@ def _build_real_file_asset(prefix_kind: str, payload: str) -> tuple[str, list[In
     return user_prompt or default_prompt, [asset]
 
 
+def _build_real_asset_from_line(line: str) -> tuple[str, list[InputAsset]] | None:
+    lowered_line = line.lower()
+
+    for prefix, prefix_kind in REAL_IMAGE_PREFIXES.items():
+        if lowered_line.startswith(prefix):
+            payload = line[len(prefix) :].strip()
+            return _build_real_image_asset(prefix_kind, payload)
+
+    for prefix, prefix_kind in REAL_AUDIO_PREFIXES.items():
+        if lowered_line.startswith(prefix):
+            payload = line[len(prefix) :].strip()
+            return _build_real_audio_asset(prefix_kind, payload)
+
+    for prefix, prefix_kind in REAL_VIDEO_PREFIXES.items():
+        if lowered_line.startswith(prefix):
+            payload = line[len(prefix) :].strip()
+            return _build_real_video_asset(prefix_kind, payload)
+
+    for prefix, prefix_kind in REAL_FILE_PREFIXES.items():
+        if lowered_line.startswith(prefix):
+            payload = line[len(prefix) :].strip()
+            return _build_real_file_asset(prefix_kind, payload)
+
+    return None
+
+
+def _build_multiple_real_assets(raw_input: str) -> tuple[str, list[InputAsset]] | None:
+    lines = [line.strip() for line in raw_input.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return None
+
+    prompts: list[str] = []
+    assets: list[InputAsset] = []
+    for line in lines:
+        built = _build_real_asset_from_line(line)
+        if built is None:
+            return None
+
+        user_input, line_assets = built
+        if "|" in line:
+            prompts.append(user_input)
+        assets.extend(line_assets)
+
+    if not assets:
+        return None
+
+    return prompts[-1] if prompts else "请分析这些附件。", assets
+
+
 def _build_simulated_asset(kind: str, payload: str) -> tuple[str, list[InputAsset]]:
     content = sanitize_text(payload) or "用户声明存在该模态输入，但未提供更多描述。"
     return content, [
@@ -230,6 +279,10 @@ def parse_input_assets(raw_input: str) -> tuple[str, list[InputAsset]]:
     lowered_input = cleaned_input.lower()
 
     try:
+        multiple_assets = _build_multiple_real_assets(cleaned_input)
+        if multiple_assets is not None:
+            return multiple_assets
+
         for prefix, prefix_kind in REAL_IMAGE_PREFIXES.items():
             if lowered_input.startswith(prefix):
                 payload = cleaned_input[len(prefix) :].strip()

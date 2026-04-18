@@ -10,7 +10,40 @@
         {{ message.role === 'user' ? t('chat.user') : t('chat.assistant') }}
       </div>
       <div v-if="message.role === 'user'" class="message__content message__content--text">
-        {{ message.content }}
+        <div v-if="message.attachments?.length" class="message__attachments">
+          <div v-if="imageAttachments(message).length" class="message__image-attachments">
+            <a
+              v-for="attachment in imageAttachments(message)"
+              :key="attachment.assetId"
+              class="message-attachment message-attachment--image"
+              :href="attachment.downloadUrl || attachment.url"
+              :download="attachment.fileName"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <img
+                class="message-attachment__image"
+                :alt="attachment.fileName"
+                :src="attachment.previewUrl || attachment.url"
+              />
+            </a>
+          </div>
+          <a
+            v-for="attachment in fileAttachments(message)"
+            :key="attachment.assetId"
+            class="message-attachment message-attachment--file"
+            :href="attachment.downloadUrl || attachment.url"
+            :download="attachment.fileName"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span class="message-attachment__icon">FILE</span>
+            <span class="message-attachment__meta">
+              <span class="message-attachment__name">{{ attachment.fileName }}</span>
+            </span>
+          </a>
+        </div>
+        <p v-if="message.content" class="message__text">{{ message.content }}</p>
       </div>
       <div
         v-else
@@ -24,7 +57,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 import { marked } from 'marked';
-import type { ChatMessage } from '../types/api';
+import type { ChatAttachment, ChatMessage } from '../types/api';
 
 defineProps<{
   messages: ChatMessage[];
@@ -74,6 +107,18 @@ function escapeHtml(text: string): string {
   };
   return text.replace(/[&<>"']/g, (char) => map[char]);
 }
+
+function isImageAttachment(attachment: ChatAttachment): boolean {
+  return attachment.kind === 'image';
+}
+
+function imageAttachments(message: ChatMessage): ChatAttachment[] {
+  return (message.attachments ?? []).filter(isImageAttachment);
+}
+
+function fileAttachments(message: ChatMessage): ChatAttachment[] {
+  return (message.attachments ?? []).filter((attachment) => !isImageAttachment(attachment));
+}
 </script>
 
 <style scoped>
@@ -115,9 +160,100 @@ function escapeHtml(text: string): string {
   word-wrap: break-word;
 }
 
+.message__text {
+  margin: 0;
+}
+
+.message__attachments {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  opacity: 0.82;
+}
+
+.message__image-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  max-width: 378px;
+}
+
+.message__attachments + .message__text {
+  margin-top: 2px;
+}
+
+.message-attachment {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: min(220px, 100%);
+  max-width: 300px;
+  padding: 6px 8px;
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.message-attachment:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.message-attachment--image {
+  display: block;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: transparent;
+}
+
+.message-attachment--file {
+  justify-self: end;
+}
+
+.message-attachment__image {
+  display: block;
+  width: 128px;
+  height: 128px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.message-attachment__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.message-attachment__meta {
+  display: grid;
+  min-width: 0;
+}
+
+.message-attachment__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+
 .message--user .message__content {
-  background-color: #0084ff;
-  color: white;
+  background-color: #ffffff;
+  color: #0f0f11;
   border-radius: 12px 12px 4px 12px;
 }
 

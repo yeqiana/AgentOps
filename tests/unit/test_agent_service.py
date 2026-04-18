@@ -134,6 +134,18 @@ class AgentServiceTests(unittest.TestCase):
         self.assertEqual(assets[0]["storage_mode"], "local_path")
         self.assertIn("第一行", assets[0]["content"])
 
+    def test_parse_multiple_reference_assets(self) -> None:
+        file_path = Path(__file__).resolve()
+
+        normalized_text, assets = parse_input_assets(
+            f"/image-base64 {SMALL_PNG_BASE64}\n/file-path {file_path}|请一起分析这些附件"
+        )
+
+        self.assertEqual(normalized_text, "请一起分析这些附件")
+        self.assertEqual([asset["kind"] for asset in assets], ["image", "file"])
+        self.assertEqual(assets[0]["storage_mode"], "bytes")
+        self.assertEqual(assets[1]["storage_mode"], "local_path")
+
 
 if __name__ == "__main__":
     unittest.main()

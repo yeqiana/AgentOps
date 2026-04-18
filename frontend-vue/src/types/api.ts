@@ -67,6 +67,9 @@ export interface UploadAssetResponse {
   trace_id: string;
   upload_dir: string;
   saved_path: string;
+  original_name: string;
+  mime_type: string;
+  download_url: string;
   inferred_kind: string;
   user_input: string;
   route_name: string;
@@ -81,4 +84,15 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  attachments?: ChatAttachment[];
+}
+
+export interface ChatAttachment {
+  assetId: string;
+  fileName: string;
+  kind: string;
+  url: string;
+  downloadUrl: string;
+  previewUrl?: string;
+  savedPath?: string;
 }
